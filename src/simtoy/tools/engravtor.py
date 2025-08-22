@@ -6,8 +6,6 @@ import numpy as np
 class Engravtor(gfx.WorldObject):
     def __init__(self,ao_map = None):
         super().__init__()
-        self.receive_shadow = True
-
         path = files("simtoy.data.engravtor") / "engravtor.gltf"
         self.scene : gfx.Scene = gfx.load_gltf(path).scene
         self.scene.traverse(lambda o: setattr(o,'cast_shadow',True) or setattr(o,'receive_shadow',True),True)
@@ -29,7 +27,6 @@ class Engravtor(gfx.WorldObject):
         persp_camera : gfx.PerspectiveCamera = next(tool.iter(lambda o: o.name == '观察点'))
         persp_camera.depth_range = None
         persp_camera.show_pos(self.origin_obj.local.position,up=[0,0,1],depth=0.7690542914429888)
-        print(persp_camera.get_state())
 
         # ortho_camera : gfx.OrthographicCamera = next(gltf.scene.iter(lambda o: o.name == '正交相机'))
         # ortho_camera.show_pos(origin_obj.world.position,up=[0,0,1])
@@ -51,6 +48,8 @@ class Engravtor(gfx.WorldObject):
 
     def set_consumable(self,name):
         wood : gfx.WorldObject = next(self.scene.iter(lambda o: o.name == '木板-100x100x1'))
+        wood.cast_shadow = True
+        wood.receive_shadow=True
         wood.local.position = self.origin_obj.local.position
         wood.local.z += 0.0005
         self.add(wood)

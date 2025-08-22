@@ -28,7 +28,7 @@
 
         <child type="title">
           <object class="GtkLabel">
-            <property name="label">Building 3D</property>
+            <property name="label">X-Laser Lab</property>
           </object>
         </child>
 

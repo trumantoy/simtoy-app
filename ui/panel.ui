@@ -68,39 +68,6 @@
                         </child>
                     </object>
                 </child>
-                <child>
-                    <object class="GtkBox">
-                        <property name="margin-top">10</property>
-                        <property name="margin-bottom">10</property>
-                        <child>
-                            <object class="GtkLabel">
-                                <property name="label">评估阈值</property>
-                                <property name="use-markup">True</property>
-                                <property name="xalign">0.0</property>
-                                <property name="width-request">100</property>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkSpinButton" id="assessment">
-                                <property name="digits">1</property>
-                                <property name="xalign">1.0</property>
-                                <property name="width-request">200</property>
-                                <property name="adjustment">
-                                    <object class="GtkAdjustment">
-                                        <property name="lower">0</property>
-                                        <property name="upper">1</property>
-                                        <property name="step_increment">0.1</property>
-                                        <property name="page_increment">1</property>
-                                        <property name="page_size">0</property>
-                                        <property name="value">1</property>
-                                    </object>
-                                </property>
-                                <property name="climb_rate">1</property>
-                                <signal name="value-changed" handler="assessment_value_changed"/>
-                            </object>
-                        </child>
-                    </object>
-                </child>
             </object>
         </child>
         <child>

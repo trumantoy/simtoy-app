@@ -240,23 +240,6 @@ class Panel (Gtk.Paned):
         camera = self.viewbar.get_view_camera()
         camera.show_object(item.obj)
 
-    @Gtk.Template.Callback()
-    def assessment_value_changed(self, spin_button):
-        assessment = spin_button.get_value()
-
-        for item in self.model:
-            if type(item.obj) != PointCloud:
-                continue
-            
-            for sub_item in item.model:
-                if type(sub_item.obj) != Building:
-                    continue
-
-                if sub_item.obj.assessment < assessment:
-                    sub_item.obj.material.opacity = 1
-                else:
-                    sub_item.obj.material.opacity = 0
-            
     # @Gtk.Template.Callback()
     def x_value_changed(self, spin_button):
         value = spin_button.get_value()

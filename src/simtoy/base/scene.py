@@ -26,8 +26,6 @@ class Editor(gfx.Scene):
         self.view_controller.add_camera(persp_camera)
         self.view_controller.add_camera(ortho_camera)
         
-        print(persp_camera.get_state())
-
         grid0 = gfx.Grid(
             gfx.box_geometry(),
             gfx.GridMaterial(
@@ -57,13 +55,11 @@ class Editor(gfx.Scene):
         light = light = gfx.DirectionalLight(cast_shadow = True)
         light.local.position = (0.2, -1, 0.3)
         light.shadow.camera.width = light.shadow.camera.height = 1
-        light.shadow.bias = 0.0001
         self.add(light)
         
-        self.light = light = gfx.PointLight()
+        self.light = light = gfx.PointLight(intensity=2)
         self.add(light)
         
-# self.ao_map = self.skybox.material.map
         
     def step(self,dt=1/240):
         self.light.local.position = self.view_controller.cameras[0].local.position
