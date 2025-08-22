@@ -1,0 +1,13 @@
+.hotbar {
+    background-color: @theme_bg_color;
+    border-radius: 1mm; 
+    padding: 1mm;
+}
+
+.actor {
+    border: @theme_selected_bg_color solid 0.2mm;
+}
+
+.actor:hover {
+    border: @theme_selected_fg_color solid 0.2mm;
+}

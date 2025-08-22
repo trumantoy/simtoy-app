@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+    <template class="Hotbar" parent="GtkScrolledWindow">
+        <style>
+            <class name="hotbar"/>
+        </style>
+        <property name="hscrollbar-policy">never</property>
+        <property name="vscrollbar-policy">never</property>
+        <property name="max-content-width">600</property>
+        <property name="max-content-height">600</property>
+        <property name="propagate-natural-width">True</property>
+
+        <child>
+            <object class="GtkBox" id="stored_items">
+                <property name="spacing">5</property>
+                <property name="homogeneous">True</property>
+                <child>
+                    <object class="GtkToggleButton" id="point">
+                        <property name="label">点</property>
+                        <property name="height-request">80</property>
+                        <property name="width-request">80</property>
+                        <signal name="toggled" handler="on_point_toggled" swapped="no"/>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkToggleButton" id="line">
+                        <property name="label">线</property>
+                        <signal name="toggled" handler="on_line_toggled" swapped="no"/>
+                        <property name="group">point</property> 
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkToggleButton" id="surface">
+                        <property name="label">面</property>
+                        <signal name="toggled" handler="on_surface_toggled" swapped="no"/>
+                        <property name="group">point</property> 
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

@@ -1,0 +1,92 @@
+from typing import Literal, TypedDict
+import pygfx as gfx
+# import pybullet as bullet
+
+import numpy as np
+import pylinalg as la
+from ..tools.builtin import *
+
+class Editor(gfx.Scene):
+    def __init__(self):
+        super().__init__()
+        self.steps = list()
+
+        self.toolbar = list()
+        self.actionbar = list()
+
+        ortho_camera = gfx.OrthographicCamera()
+        persp_camera = gfx.PerspectiveCamera()
+        persp_camera.local.position = ortho_camera.local.position = [0,-0.8,0.2]
+        ortho_camera.show_pos([0,0,0],up=[0,0,1])
+        persp_camera.show_pos([0,0,0],up=[0,0,1])
+
+        self.view_mode : Literal['ortho','persp'] = 'persp'
+
+        self.view_controller = gfx.OrbitController()
+        self.view_controller.add_camera(persp_camera)
+        self.view_controller.add_camera(ortho_camera)
+        
+        print(persp_camera.get_state())
+
+        grid0 = gfx.Grid(
+            gfx.box_geometry(),
+            gfx.GridMaterial(
+                major_step=1,
+                minor_step=0.1,
+                thickness_space="world",
+                axis_thickness=0,
+                major_thickness=0.005,
+                minor_thickness=0.001,
+                infinite=True,
+            ),
+            orientation="xy",
+        )
+        self.add(grid0)
+
+        self.skybox = SkyBox()
+        self.add(self.skybox)
+        
+        self.ground = Ground()
+        self.ground.receive_shadow = True
+        self.ground.local.z -= 0.001
+        self.add(self.ground)
+
+        ambient = gfx.AmbientLight()
+        self.add(ambient)
+
+        light = light = gfx.DirectionalLight(cast_shadow = True)
+        light.local.position = (0.2, -1, 0.3)
+        light.shadow.camera.width = light.shadow.camera.height = 1
+        light.shadow.bias = 0.0001
+        self.add(light)
+        
+        self.light = light = gfx.PointLight()
+        self.add(light)
+        
+# self.ao_map = self.skybox.material.map
+        
+    def step(self,dt=1/240):
+        self.light.local.position = self.view_controller.cameras[0].local.position
+        
+        if self.steps:
+            if not self.steps[0](): return
+            self.steps.pop(0)
+
+        for entity in self.children:
+            if 'step' not in dir(entity): continue 
+            entity.step(dt)
+
+    def get_view(self):
+        if self.view_mode == 'persp':
+            return self.view_controller.cameras[0], self.view_controller
+        return self.view_controller.cameras[1], self.view_controller
+
+    def switch_view_focus(self,origin,target):
+        for camera in self.view_controller.cameras:
+            camera : gfx.PerspectiveCamera
+            camera.local.position = origin
+            camera.show_pos(target)
+        pass
+
+    def restore_view_focus():
+        pass

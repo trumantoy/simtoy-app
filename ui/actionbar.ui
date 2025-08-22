@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+    <template class="Actionbar" parent="GtkScrolledWindow">
+        <style>
+            <class name="actionbar"/>
+        </style>
+        <property name="hscrollbar-policy">never</property>
+        <property name="vscrollbar-policy">never</property>
+        <property name="propagate-natural-width">True</property>
+
+        <child>
+            <object class="GtkBox" id="stored_items">
+                <property name="orientation">vertical</property>
+                <property name="spacing">5</property>
+                <property name="homogeneous">True</property>
+                <child>
+                    <object class="GtkToggleButton">
+                        <property name="label">选择</property>
+                        <property name="height-request">60</property>
+                        <property name="width-request">60</property>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkToggleButton">
+                    <property name="label">移动</property>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkToggleButton">
+                    <property name="label">旋转</property>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkToggleButton">
+                    <property name="label">缩放</property>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkToggleButton">
+                    <property name="label">挤出</property>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkToggleButton">
+                    <property name="label">连接</property>
+                    </object>
+                </child>
+
+                <child>
+                    <object class="GtkToggleButton">
+                    <property name="label">断开</property>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>
