@@ -20,7 +20,7 @@
 					],
 					"intensity":543.5141306588226,
 					"type":"point",
-					"name":"\u70b9\u5149.003"
+					"name":"\u70b9\u5149"
 				}
 			]
 		}
@@ -32,7 +32,8 @@
 			"nodes":[
 				243,
 				244,
-				245
+				245,
+				246
 			]
 		}
 	],
@@ -1370,6 +1371,20 @@
 				0.2054089903831482,
 				-0.07924428582191467,
 				0.027347570285201073
+			]
+		},
+		{
+			"mesh":239,
+			"name":"\u67f1\u4f53",
+			"scale":[
+				0.006933240685611963,
+				0.006933240685611963,
+				0.013049645349383354
+			],
+			"translation":[
+				0.29928135871887207,
+				-0.07684486359357834,
+				0.05805862694978714
 			]
 		},
 		{
@@ -4156,7 +4171,6 @@
 					0.736203670501709,
 					1
 				],
-				"metallicFactor":0.800000011920929,
 				"roughnessFactor":0.5
 			}
 		},
@@ -4265,9 +4279,6 @@
 					0.7360000014305115,
 					1
 				],
-				"metallicRoughnessTexture":{
-					"index":0
-				},
 				"roughnessFactor":0.5
 			}
 		},
@@ -4275,15 +4286,41 @@
 			"doubleSided":true,
 			"name":"oak_veneer_01",
 			"normalTexture":{
-				"index":1
+				"index":0
 			},
 			"pbrMetallicRoughness":{
 				"baseColorTexture":{
-					"index":2
+					"index":1
 				},
 				"metallicRoughnessTexture":{
-					"index":3
+					"index":2
 				}
+			}
+		},
+		{
+			"doubleSided":true,
+			"name":"\u6750\u8d28",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0.800000011920929,
+					0.800000011920929,
+					0.800000011920929,
+					1
+				],
+				"roughnessFactor":0.5
+			}
+		},
+		{
+			"doubleSided":true,
+			"name":"\u6750\u8d28.001",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0.800000011920929,
+					0.800000011920929,
+					0.800000011920929,
+					1
+				],
+				"roughnessFactor":0.5
 			}
 		}
 	],
@@ -7633,6 +7670,29 @@
 					"material":238
 				}
 			]
+		},
+		{
+			"name":"\u67f1\u4f53",
+			"primitives":[
+				{
+					"attributes":{
+						"POSITION":824,
+						"NORMAL":825,
+						"TEXCOORD_0":826
+					},
+					"indices":827,
+					"material":239
+				},
+				{
+					"attributes":{
+						"POSITION":828,
+						"NORMAL":829,
+						"TEXCOORD_0":830
+					},
+					"indices":831,
+					"material":240
+				}
+			]
 		}
 	],
 	"textures":[
@@ -7647,18 +7707,9 @@
 		{
 			"sampler":0,
 			"source":2
-		},
-		{
-			"sampler":0,
-			"source":3
 		}
 	],
 	"images":[
-		{
-			"mimeType":"image/png",
-			"name":"bake",
-			"uri":"bake.png"
-		},
 		{
 			"mimeType":"image/png",
 			"name":"oak_veneer_01_nor_gl_1k.exr",
@@ -15009,6 +15060,74 @@
 			"componentType":5123,
 			"count":36,
 			"type":"SCALAR"
+		},
+		{
+			"bufferView":824,
+			"componentType":5126,
+			"count":160,
+			"max":[
+				1,
+				1,
+				1
+			],
+			"min":[
+				-1,
+				-1,
+				-1
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":825,
+			"componentType":5126,
+			"count":160,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":826,
+			"componentType":5126,
+			"count":160,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":827,
+			"componentType":5123,
+			"count":282,
+			"type":"SCALAR"
+		},
+		{
+			"bufferView":828,
+			"componentType":5126,
+			"count":32,
+			"max":[
+				1,
+				1,
+				1
+			],
+			"min":[
+				-1,
+				-1,
+				1
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":829,
+			"componentType":5126,
+			"count":32,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":830,
+			"componentType":5126,
+			"count":32,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":831,
+			"componentType":5123,
+			"count":90,
+			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -19955,6 +20074,54 @@
 			"byteLength":72,
 			"byteOffset":35722080,
 			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":1920,
+			"byteOffset":35722152,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":1920,
+			"byteOffset":35724072,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":1280,
+			"byteOffset":35725992,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":564,
+			"byteOffset":35727272,
+			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":384,
+			"byteOffset":35727836,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":384,
+			"byteOffset":35728220,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":256,
+			"byteOffset":35728604,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":180,
+			"byteOffset":35728860,
+			"target":34963
 		}
 	],
 	"samplers":[
@@ -19965,7 +20132,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":35722152,
+			"byteLength":35729040,
 			"uri":"engravtor.bin"
 		}
 	]
