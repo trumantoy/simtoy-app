@@ -36,6 +36,7 @@ class SkyBox(gfx.Background):
         len,h,w,ch = pictures.shape
         tex = gfx.Texture(np.stack(pictures, axis=0), dim=2, size=(w, h, 6), generate_mipmaps=True)
         super().__init__(None, gfx.BackgroundSkyboxMaterial(map=tex))
+
         
         pass
 

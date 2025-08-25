@@ -86,10 +86,11 @@ class AppWindow (Gtk.ApplicationWindow):
         action.connect('activate', self.file_close)
         self.add_action(action)
         
-        tool = Engravtor()
+        tool = Engravtor(env_map = self.editor.env_map)
         tool.set_consumable('木板-100x100x1')
         self.editor.add(tool)
         self.editor.switch_view_focus(*tool.get_view_focus())
+
 
     def pick(self,x,y):
         info = self.renderer.get_pick_info([x,y])

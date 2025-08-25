@@ -43,10 +43,14 @@ class Editor(gfx.Scene):
 
         self.skybox = SkyBox()
         self.add(self.skybox)
-        
+
+        self.env_map = self.skybox.material.map
+
         self.ground = Ground()
         self.ground.receive_shadow = True
         self.ground.local.z -= 0.001
+        # self.ground.material.env_map = self.env_map
+
         self.add(self.ground)
 
         ambient = gfx.AmbientLight()
@@ -57,7 +61,7 @@ class Editor(gfx.Scene):
         light.shadow.camera.width = light.shadow.camera.height = 1
         self.add(light)
         
-        self.light = light = gfx.PointLight(intensity=2)
+        self.light = light = gfx.PointLight(intensity=1)
         self.add(light)
         
         

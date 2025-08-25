@@ -19,7 +19,7 @@ if __name__ == '__main__':
     def do_activate(app):
         builder = Gtk.Builder.new_from_file('ui/app.ui')
         app_window = builder.get_object('app_window')
-        app.add_window(app_window)
+        app.add_window(app_window) 
 
     app = Gtk.Application(application_id="xyz.simtoy.app")
     app.connect('activate',do_activate)
