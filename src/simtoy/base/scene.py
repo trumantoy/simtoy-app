@@ -19,13 +19,9 @@ class Editor(gfx.Scene):
         persp_camera.local.position = ortho_camera.local.position = [0,-0.8,0.2]
         ortho_camera.show_pos([0,0,0],up=[0,0,1])
         persp_camera.show_pos([0,0,0],up=[0,0,1])
-
-        self.view_mode : Literal['ortho','persp'] = 'persp'
-
-        self.view_controller = gfx.OrbitController()
-        self.view_controller.add_camera(persp_camera)
-        self.view_controller.add_camera(ortho_camera)
-        
+        self.persp_camera = persp_camera
+        self.ortho_camera = ortho_camera
+                
         grid0 = gfx.Grid(
             gfx.box_geometry(),
             gfx.GridMaterial(
@@ -61,13 +57,8 @@ class Editor(gfx.Scene):
         light.shadow.camera.width = light.shadow.camera.height = 1
         self.add(light)
         
-        self.light = light = gfx.PointLight(intensity=1)
-        self.add(light)
-        
         
     def step(self,dt=1/240):
-        self.light.local.position = self.view_controller.cameras[0].local.position
-        
         if self.steps:
             if not self.steps[0](): return
             self.steps.pop(0)
@@ -76,11 +67,9 @@ class Editor(gfx.Scene):
             if 'step' not in dir(entity): continue 
             entity.step(dt)
 
-    def get_view(self):
-        if self.view_mode == 'persp':
-            return self.view_controller.cameras[0], self.view_controller
-        return self.view_controller.cameras[1], self.view_controller
-
+    def get_viewport(self):
+        return [self.persp_camera,self.ortho_camera]
+        
     def switch_view_focus(self,origin,target):
         for camera in self.view_controller.cameras:
             camera : gfx.PerspectiveCamera

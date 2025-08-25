@@ -86,16 +86,23 @@ class AppWindow (Gtk.ApplicationWindow):
         action.connect('activate', self.file_close)
         self.add_action(action)
         
-        tool = Engravtor(env_map = self.editor.env_map)
-        tool.set_consumable('木板-100x100x1')
-        self.editor.add(tool)
-        self.editor.switch_view_focus(*tool.get_view_focus())
+        self.tool = Engravtor(env_map = self.editor.env_map)
+        self.tool.set_consumable('木板-100x100x1')
+        self.editor.add(self.tool)
 
+        self.light = gfx.PointLight(intensity=1)
+        self.editor.add(self.light)
+        
+        self.camera_controller = gfx.OrbitController()
+        # self.camera_controller.add_camera(self.editor.persp_camera)
+        # self.camera_controller.add_camera(self.editor.ortho_camera)
+
+        for c in self.tool.get_viewport(): self.camera_controller.add_camera(c)
 
     def pick(self,x,y):
         info = self.renderer.get_pick_info([x,y])
-
         
+        # GLib.timeout_add(10,lambda: self.camera_controller.remove_camera(camera))
         # if self.panel.selected_item:
         #     self.panel.selected_item.obj.set_bounding_box_visible(False)
 
@@ -117,12 +124,13 @@ class AppWindow (Gtk.ApplicationWindow):
     def draw(self,receiver, cr, area_w, area_h):
         width,height = self.canvas.get_physical_size()
 
-        camera,controller = self.editor.get_view()
         if width != area_w or height != area_h: 
             self.canvas = wgpu.gui.offscreen.WgpuCanvas(size=(area_w,area_h))
             self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
-            controller.register_events(self.renderer)
-
+            self.camera_controller.register_events(self.renderer)
+        
+        camera = self.camera_controller.cameras[0]
+        self.light.local.position = camera.local.position
         self.renderer.render(self.editor, camera)
         
         img : np.ndarray = np.asarray(self.canvas.draw())
@@ -132,6 +140,7 @@ class AppWindow (Gtk.ApplicationWindow):
         stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, img_w)
         surface = cairo.ImageSurface.create_for_data(img.data, cairo.FORMAT_ARGB32, img_w, img_h, stride)
         cr.set_source_surface(surface, 0, 0)
+
         cr.paint()
 
         self.editor.step()
