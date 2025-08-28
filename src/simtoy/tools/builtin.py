@@ -35,9 +35,7 @@ class SkyBox(gfx.Background):
 
         len,h,w,ch = pictures.shape
         tex = gfx.Texture(np.stack(pictures, axis=0), dim=2, size=(w, h, 6), generate_mipmaps=True)
-        super().__init__(None, gfx.BackgroundSkyboxMaterial(map=tex))
-
-        
+        super().__init__(None, gfx.BackgroundSkyboxMaterial(map=tex))        
         pass
 
     def step(self,dt):
@@ -49,7 +47,7 @@ class Ground(gfx.Mesh):
         checker_blue = files("simtoy.data.builtin") / "checker_blue.png"
         
         im = iio.imread(checker_blue.as_posix()).astype("float32") / 255
-        material = gfx.MeshPhongMaterial(map=gfx.Texture(im, dim=2,generate_mipmaps=True),pick_write=True)
+        material = gfx.MeshPhongMaterial(map=gfx.Texture(im, dim=2,generate_mipmaps=True),pick_write=False)
         geom = gfx.plane_geometry(100, 100, 1)
         geom.texcoords.data[:, :] *= 100/2
         super().__init__(geom,material)

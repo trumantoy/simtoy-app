@@ -29,7 +29,7 @@ class AppWindow (Gtk.ApplicationWindow):
     area : Gtk.DrawingArea = Gtk.Template.Child('widget')
     actionbar : Actionbar = Gtk.Template.Child('actionbar')
     hotbar : Hotbar = Gtk.Template.Child('hotbar')
-    viewbar : Viewbar = Gtk.Template.Child('viewbar')
+    # viewbar : Viewbar = Gtk.Template.Child('viewbar')
 
     def __init__(self):
         provider = Gtk.CssProvider.new()
@@ -41,9 +41,6 @@ class AppWindow (Gtk.ApplicationWindow):
         
         self.panel : Panel = self.stack.get_visible_child()
         self.area.set_draw_func(self.draw)
-        self.viewbar.set_editor(self.editor)
-        self.hotbar.set_viewbar(self.area, self.viewbar, self.panel, self.editor)
-        self.panel.set_viewbar(self.viewbar)
 
         zoom_controller = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags(Gtk.EventControllerScrollFlags.VERTICAL))
         zoom_controller.connect("scroll", lambda sender,dx,dy: self.renderer.convert_event(dict(event_type='wheel',dx=0.0,dy=dy*100,x=0,y=0,time_stamp=time.perf_counter())))
@@ -85,22 +82,26 @@ class AppWindow (Gtk.ApplicationWindow):
         action = Gio.SimpleAction.new('close', None)
         action.connect('activate', self.file_close)
         self.add_action(action)
-        
-        self.tool = Engravtor(env_map = self.editor.env_map)
-        self.tool.set_consumable('木板-100x100x1')
-        self.editor.add(self.tool)
 
         self.light = gfx.PointLight(intensity=1)
         self.editor.add(self.light)
+
+        self.tool = Engravtor(env_map = self.editor.env_map)
+        self.tool.set_consumable('木板-110x110x1')
+        self.editor.add(self.tool)
         
         self.camera_controller = gfx.OrbitController()
         # self.camera_controller.add_camera(self.editor.persp_camera)
         # self.camera_controller.add_camera(self.editor.ortho_camera)
-
         for c in self.tool.get_viewport(): self.camera_controller.add_camera(c)
+        self.hotbar.set_items(self.tool.get_hot_items())
+        
 
     def pick(self,x,y):
         info = self.renderer.get_pick_info([x,y])
+
+        type(info['world_object'])
+        
         
         # GLib.timeout_add(10,lambda: self.camera_controller.remove_camera(camera))
         # if self.panel.selected_item:
@@ -122,6 +123,8 @@ class AppWindow (Gtk.ApplicationWindow):
         # self.panel.selected_item = item
 
     def draw(self,receiver, cr, area_w, area_h):
+        self.editor.step()
+
         width,height = self.canvas.get_physical_size()
 
         if width != area_w or height != area_h: 
@@ -143,8 +146,7 @@ class AppWindow (Gtk.ApplicationWindow):
 
         cr.paint()
 
-        self.editor.step()
-        GLib.idle_add(receiver.queue_draw)
+        GLib.timeout_add(30,receiver.queue_draw)
 
     def file_import(self, sender, args):
         dialog = Gtk.FileDialog()
