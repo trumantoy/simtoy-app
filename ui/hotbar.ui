@@ -11,29 +11,24 @@
         <property name="propagate-natural-width">True</property>
 
         <child>
-            <object class="GtkBox" id="stored_items">
+            <object class="GtkBox" id="tools">
                 <property name="spacing">5</property>
                 <property name="homogeneous">True</property>
                 <child>
-                    <object class="GtkToggleButton" id="point">
-                        <property name="label">点</property>
+                    <object class="GtkButton" id="point">
+                        <property name="label">文本</property>
                         <property name="height-request">80</property>
                         <property name="width-request">80</property>
-                        <signal name="toggled" handler="on_point_toggled" swapped="no"/>
                     </object>
                 </child>
                 <child>
-                    <object class="GtkToggleButton" id="line">
-                        <property name="label">线</property>
-                        <signal name="toggled" handler="on_line_toggled" swapped="no"/>
-                        <property name="group">point</property> 
+                    <object class="GtkButton" id="line">
+                        <property name="label">位图</property>
                     </object>
                 </child>
                 <child>
-                    <object class="GtkToggleButton" id="surface">
-                        <property name="label">面</property>
-                        <signal name="toggled" handler="on_surface_toggled" swapped="no"/>
-                        <property name="group">point</property> 
+                    <object class="GtkButton" id="surface">
+                        <property name="label">矢量图</property>
                     </object>
                 </child>
             </object>

@@ -99,10 +99,9 @@ class AppWindow (Gtk.ApplicationWindow):
 
     def pick(self,x,y):
         info = self.renderer.get_pick_info([x,y])
+        print(self.camera_controller.cameras[0].get_state())
 
-        type(info['world_object'])
-        
-        
+
         # GLib.timeout_add(10,lambda: self.camera_controller.remove_camera(camera))
         # if self.panel.selected_item:
         #     self.panel.selected_item.obj.set_bounding_box_visible(False)

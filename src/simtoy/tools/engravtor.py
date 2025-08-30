@@ -1,9 +1,12 @@
+from trimesh.creation import cylinder
 import wgpu
 import pygfx as gfx
 from pygfx.renderers.wgpu import *
 from pygfx.objects import WorldObject
 from pygfx.materials import Material
+import pylinalg as la
 from importlib.resources import files
+
 
 import numpy as np
 import io
@@ -22,6 +25,7 @@ class OriginMaterial(Material):
 
     def __init__(self, *, color='black', size=5.0, **kwargs):
         super().__init__(**kwargs)
+        print(kwargs)
         self.color = gfx.Color('orange')
         self.size = float(size)
 
@@ -42,6 +46,15 @@ class OriginMaterial(Material):
     def size(self, v):
         self.uniform_buffer.data["size"] = float(v)
         self.uniform_buffer.update_full()
+
+    def _wgpu_get_pick_info(self, pick_value):
+        from pygfx.utils import unpack_bitfield
+        values = unpack_bitfield(pick_value, wobject_id=20, index=26, x=9, y=9)
+        return {
+            "vertex_index": values["index"],
+            "point_coord": (values["x"] - 256.0, values["y"] - 256.0),
+        }
+
 
 @register_wgpu_render_function(gfx.WorldObject, OriginMaterial)
 class OriginShader(BaseShader):
@@ -117,7 +130,7 @@ class OriginShader(BaseShader):
                 let pos_s = (pos_n.xy / pos_n.w + 1.0) * screen_factor;
                 
                 // 计算点的大小（半径，逻辑像素）
-                let half = 1.0 * u_material.size;
+                let half = 5.0 * u_material.size;
                 
                 // 定义6个顶点的相对偏移，形成两个三角形组成的正方形
                 // 顶点顺序：左下、右下、左上、左上、右下、右上
@@ -160,7 +173,7 @@ class OriginShader(BaseShader):
                 
                 // 设置点的物理像素尺寸
                 varyings.size_p = f32(u_material.size * l2p);
-                
+                varyings.pick_idx = u32(node_index);
                 return varyings;
             }
 
@@ -173,15 +186,15 @@ class OriginShader(BaseShader):
                 // length(pointcoord) 计算到中心的欧几里得距离
                 // 0.5 * size_p 是圆的半径
                 // 正值：点在圆外部，负值：点在圆内部，0值：点在圆边界上
-                let dist_to_edge = length(varyings.pointcoord_p) - 0.5 * varyings.size_p;
+                var dist_to_edge = length(varyings.pointcoord_p) - 0.5 * varyings.size_p;
                 
                 // 描边逻辑：判断当前片段是否在描边范围内
-                let l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
-                let edge_width = 0.75 * l2p;  // 描边宽度（物理像素）
+                var l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
+                var edge_width = 0.75 * l2p;  // 描边宽度（物理像素）
                 
                 // 判断片段类型
-                let is_edge = abs(dist_to_edge) < edge_width;    // 是否在描边范围内
-                let is_inside = dist_to_edge < 0.0;              // 是否在点内部
+                var is_edge = abs(dist_to_edge) < edge_width;    // 是否在描边范围内
+                var is_inside = dist_to_edge < 0.0;              // 是否在点内部
                 
                 // 根据片段位置设置颜色
                 var final_color: vec4<f32>;
@@ -195,11 +208,141 @@ class OriginShader(BaseShader):
                     final_color = vec4<f32>(srgb2physical(col.rgb), col.a);
                 } else {
                     // 点外部：完全透明
-                    final_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+                    let dist_to_edge2 = length(varyings.pointcoord_p) - 2.0 * varyings.size_p;
+
+                    let edge_width2 = 0.75 * l2p;  // 描边宽度（物理像素）
+                    is_edge = abs(dist_to_edge2) < edge_width2;    // 是否在描边范围内
+                    is_inside = dist_to_edge2 < 0.0;              // 是否在点内部
+                    if (is_edge) {
+                        final_color = vec4<f32>(1.0, 1.0, 1.0, 0.5);
+                    } else {
+                        final_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+                    }
                 }
                 
+                let pointcoord: vec2<f32> = varyings.pointcoord_p / l2p;
+
                 // 设置最终输出颜色
                 out.color = final_color;
+
+                $$ if write_pick
+                out.pick = (
+                    pick_pack(u32(u_wobject.id), 20) +
+                    pick_pack(varyings.pick_idx, 26) +
+                    pick_pack(u32(pointcoord.x + 256.0), 9) +
+                    pick_pack(u32(pointcoord.y + 256.0), 9)
+                );
+                $$ endif
+                return out;
+            }
+        """
+
+
+class AxisMaterial(Material):
+    """坐标轴材质：支持颜色和线宽设置"""
+    uniform_type = dict(
+        Material.uniform_type,
+        color="4xf4",
+        thickness="f4",
+        size='f4'
+    )
+
+    def __init__(self, *, color, **kwargs):
+        super().__init__(** kwargs)
+        self.color = gfx.Color(color)
+
+    @property
+    def color(self):
+        return tuple(self.uniform_buffer.data["color"])
+
+    @color.setter
+    def color(self, rgba):
+        self.uniform_buffer.data["color"] = rgba
+        self.uniform_buffer.update_full()
+
+
+@register_wgpu_render_function(gfx.WorldObject, AxisMaterial)
+class AxisShader(BaseShader):
+    type = "render"
+
+    def __init__(self, wobject):
+        super().__init__(wobject)
+
+    def get_bindings(self, wobject, shared):
+        bindings = [
+            Binding("u_stdinfo", "buffer/uniform", shared.uniform_buffer),
+            Binding("u_wobject", "buffer/uniform", wobject.uniform_buffer),
+            Binding("u_material", "buffer/uniform", wobject.material.uniform_buffer),
+            Binding("s_positions", "buffer/read_only_storage", wobject.geometry.positions, "VERTEX"),
+            Binding("s_indices", "buffer/read_only_storage", wobject.geometry.indices, "VERTEX")
+        ]
+        bindings = {i: b for i, b in enumerate(bindings)}
+        self.define_bindings(0, bindings)
+        return {0: bindings}
+
+    def get_pipeline_info(self, wobject, shared):
+        return {
+            "primitive_topology": wgpu.PrimitiveTopology.triangle_list,
+            "cull_mode": wgpu.CullMode.none,
+        }
+
+    def get_render_info(self, wobject, shared):
+        geometry = wobject.geometry
+        material = wobject.material
+
+        offset, size = geometry.indices.draw_range
+        offset, size = 6 * offset, 6 * size
+
+        return {
+            "indices": (size, 1, offset, 0),
+            "render_mask": RenderMask.all,
+        }
+
+    def get_code(self):
+        return """
+            {$ include 'pygfx.std.wgsl' $}
+
+            struct VertexInput {
+                @builtin(vertex_index) index : u32,
+            };
+
+            @vertex
+            fn vs_main(in: VertexInput) -> Varyings {
+                var varyings: Varyings;
+                let index = i32(in.index);
+                let face_index = index / 6;
+                var sub_index = index % 6;
+                
+                let vii = load_s_indices(face_index);
+                let i0 = i32(vii[sub_index]);
+
+                var origin_m = u_wobject.world_transform * vec4<f32>(0,0,0,1.0);
+                let mvp = ustdinfo.projection_transform * u_stdinfo.camtransform * u_wobject.world_transform;
+
+
+                u_stdinfo.logical_size;
+
+
+                var pos_m = vec4<f32>(load_s_positions(i0),1.0);
+                let pos_w = u_wobject.world_transform * pos_m;
+                let pos_c = u_stdinfo.cam_transform * pos_w;
+                var pos_n = u_stdinfo.projection_transform * pos_c;
+                pos_n.z = 0;
+
+                var scale = pos_n.x / pos_n.y;
+
+
+
+                varyings.position = vec4<f32>(pos_n);
+                return varyings;
+            }
+
+            @fragment
+            fn fs_main(varyings: Varyings) -> FragmentOutput {
+                var out: FragmentOutput;
+                var s = vec4<f32>(u_material.color);
+                s[3] = 0.3;
+                out.color = s;
                 return out;
             }
         """
@@ -208,16 +351,39 @@ class OriginShader(BaseShader):
 class TranformHelper(gfx.Mesh):
     def __init__(self, geometry=None, material=None, *args, **kwargs):
         super().__init__(geometry, material, *args, **kwargs)
+        origin_radius = 0.00015
+        axis_length = 0.008
+        axis_size = 0.00008
+        arrow_length = 0.002
+        arrow_size = 0.0004
 
-        point = gfx.Points(gfx.Geometry(positions=[(0,0,0)]),OriginMaterial())
+        # 原点
+        point = gfx.Points(gfx.Geometry(positions=[(0,0,0)]), OriginMaterial(pick_write=True))
         self.add(point)
 
-        # geom = gfx.Geometry(positions=[(0,0,0),(0,0,1)])
-        # material = gfx.LineMaterial(thickness=1, color='red')
-        # x_axis = gfx.Line(geom,material)
-        # self.add(x_axis)
+        # X轴 (红色)
+        geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length - arrow_length)
+        geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length / 2 + origin_radius,0,0)
+        mat = AxisMaterial(color='red',pick_write=True)
+        x_axis = gfx.WorldObject(geom,mat)
+        
+        # 添加轴端点箭头
+        arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='red',pick_write=True))
+        arrow.geometry.positions.data[:] = la.vec_transform_quat(arrow.geometry.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length + origin_radius,0,0)
+        x_axis.add(arrow)
+        self.add(x_axis)
 
-        pass
+        # Y轴 (绿色)
+        geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length - arrow_length)
+        geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length / 2 + origin_radius,0)
+        mat = AxisMaterial(color='green',pick_write=True)
+        y_axis = gfx.WorldObject(geom,mat)
+         
+        # 添加轴端点箭头
+        arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='green',pick_write=True))
+        arrow.geometry.positions.data[:] = la.vec_transform_quat(arrow.geometry.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length + origin_radius,0)
+        y_axis.add(arrow)
+        self.add(y_axis)
 
 class Text(TranformHelper):
     def __init__(self,text):
