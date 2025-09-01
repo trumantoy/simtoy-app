@@ -48,9 +48,11 @@ class AppWindow (Gtk.ApplicationWindow):
         click_controller = Gtk.GestureClick.new()
         click_controller.set_button(1)
         click_controller.connect("pressed", lambda sender,n_press,x,y: 
-                                    self.renderer.convert_event(dict(event_type='pointer_down',x=x ,y=y,button=1,buttons=(1,),time_stamp=time.perf_counter())) or 
-                                    self.renderer.convert_event(dict(event_type='pointer_up',x=x ,y=y,button=1,buttons=(1,),time_stamp=time.perf_counter())) or
+                                    self.renderer.convert_event(dict(event_type='pointer_down',x=x ,y=y,button=3,buttons=(3,),time_stamp=time.perf_counter())))
+        click_controller.connect("released", lambda sender,n_press,x,y: 
+                                    self.renderer.convert_event(dict(event_type='pointer_up',x=x ,y=y,button=3,buttons=(3,),time_stamp=time.perf_counter())) or
                                     self.pick(x,y))
+
 
         rotation_controller = Gtk.GestureClick.new()
         rotation_controller.set_button(2)
@@ -99,7 +101,6 @@ class AppWindow (Gtk.ApplicationWindow):
 
     def pick(self,x,y):
         info = self.renderer.get_pick_info([x,y])
-        print(self.camera_controller.cameras[0].get_state())
 
 
         # GLib.timeout_add(10,lambda: self.camera_controller.remove_camera(camera))
@@ -132,6 +133,7 @@ class AppWindow (Gtk.ApplicationWindow):
             self.camera_controller.register_events(self.renderer)
         
         camera = self.camera_controller.cameras[0]
+        camera.logical_size = (area_w,area_h)
         self.light.local.position = camera.local.position
         self.renderer.render(self.editor, camera)
         

@@ -4,6 +4,7 @@ import pygfx as gfx
 from pygfx.renderers.wgpu import *
 from pygfx.objects import WorldObject
 from pygfx.materials import Material
+from pygfx.utils.transform import AffineTransform
 import pylinalg as la
 from importlib.resources import files
 
@@ -186,7 +187,7 @@ class OriginShader(BaseShader):
                 // length(pointcoord) 计算到中心的欧几里得距离
                 // 0.5 * size_p 是圆的半径
                 // 正值：点在圆外部，负值：点在圆内部，0值：点在圆边界上
-                var dist_to_edge = length(varyings.pointcoord_p) - 0.5 * varyings.size_p;
+                var dist_to_edge = length(varyings.pointcoord_p) - 2.0 * varyings.size_p;
                 
                 // 描边逻辑：判断当前片段是否在描边范围内
                 var l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
@@ -207,17 +208,7 @@ class OriginShader(BaseShader):
                     // 将sRGB颜色转换为物理线性空间，保持alpha不变
                     final_color = vec4<f32>(srgb2physical(col.rgb), col.a);
                 } else {
-                    // 点外部：完全透明
-                    let dist_to_edge2 = length(varyings.pointcoord_p) - 2.0 * varyings.size_p;
-
-                    let edge_width2 = 0.75 * l2p;  // 描边宽度（物理像素）
-                    is_edge = abs(dist_to_edge2) < edge_width2;    // 是否在描边范围内
-                    is_inside = dist_to_edge2 < 0.0;              // 是否在点内部
-                    if (is_edge) {
-                        final_color = vec4<f32>(1.0, 1.0, 1.0, 0.5);
-                    } else {
-                        final_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-                    }
+                    final_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
                 }
                 
                 let pointcoord: vec2<f32> = varyings.pointcoord_p / l2p;
@@ -243,13 +234,13 @@ class AxisMaterial(Material):
     uniform_type = dict(
         Material.uniform_type,
         color="4xf4",
-        thickness="f4",
         size='f4'
     )
 
-    def __init__(self, *, color, **kwargs):
+    def __init__(self, *, color,size, **kwargs):
         super().__init__(** kwargs)
         self.color = gfx.Color(color)
+        self.size = size
 
     @property
     def color(self):
@@ -260,8 +251,24 @@ class AxisMaterial(Material):
         self.uniform_buffer.data["color"] = rgba
         self.uniform_buffer.update_full()
 
+    @property
+    def size(self):
+        return tuple(self.uniform_buffer.data["color"])
 
-@register_wgpu_render_function(gfx.WorldObject, AxisMaterial)
+    @size.setter
+    def size(self, value):
+        self.uniform_buffer.data["size"] = value
+        self.uniform_buffer.update_full()
+
+    def _wgpu_get_pick_info(self, pick_value):
+        from pygfx.utils import unpack_bitfield
+        values = unpack_bitfield(pick_value, wobject_id=20, index=26, x=9, y=9)
+        return {
+            "vertex_index": values["index"],
+            "point_coord": (values["x"] - 256.0, values["y"] - 256.0),
+        }
+
+@register_wgpu_render_function(WorldObject, AxisMaterial)
 class AxisShader(BaseShader):
     type = "render"
 
@@ -308,32 +315,36 @@ class AxisShader(BaseShader):
 
             @vertex
             fn vs_main(in: VertexInput) -> Varyings {
-                var varyings: Varyings;
+                let mvp = u_stdinfo.projection_transform * u_stdinfo.cam_transform * u_wobject.world_transform;
+                var origin_screen = mvp * vec4<f32>(0,0,0,1);
+                var x_screen = mvp * vec4<f32>(0.01,0,0,1); 
+                var y_screen = mvp * vec4<f32>(0,0.01,0,1); 
+                var z_screen = mvp * vec4<f32>(0,0,0.01,1); 
+
+                var x_direction = (vec3<f32>(x_screen.xyz / x_screen.w) - vec3<f32>(origin_screen.xyz / origin_screen.w)); 
+                var y_direction = (vec3<f32>(y_screen.xyz / y_screen.w) - vec3<f32>(origin_screen.xyz / origin_screen.w));
+                var z_direction = (vec3<f32>(z_screen.xyz / z_screen.w) - vec3<f32>(origin_screen.xyz / origin_screen.w));
+
+                var size_1_radius = max(length(x_direction),max(length(y_direction),length(z_direction)));
+                var scale = u_material.size / u_stdinfo.logical_size.y / size_1_radius;
+                
                 let index = i32(in.index);
                 let face_index = index / 6;
                 var sub_index = index % 6;
                 
                 let vii = load_s_indices(face_index);
                 let i0 = i32(vii[sub_index]);
-
-                var origin_m = u_wobject.world_transform * vec4<f32>(0,0,0,1.0);
-                let mvp = ustdinfo.projection_transform * u_stdinfo.camtransform * u_wobject.world_transform;
-
-
-                u_stdinfo.logical_size;
-
-
-                var pos_m = vec4<f32>(load_s_positions(i0),1.0);
-                let pos_w = u_wobject.world_transform * pos_m;
-                let pos_c = u_stdinfo.cam_transform * pos_w;
-                var pos_n = u_stdinfo.projection_transform * pos_c;
+                var pos_n = mvp * vec4<f32>(load_s_positions(i0) * scale ,1.0);
                 pos_n.z = 0;
 
-                var scale = pos_n.x / pos_n.y;
-
-
-
+                var varyings: Varyings;
                 varyings.position = vec4<f32>(pos_n);
+                
+                let l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;  // 逻辑到物理像素比例
+                varyings.pointcoord_p = vec2<f32>(load_s_positions(i0).xy * l2p);  // 转换为物理像素
+                
+                // 设置点的物理像素尺寸
+                varyings.pick_idx = u32(i0);
                 return varyings;
             }
 
@@ -341,49 +352,251 @@ class AxisShader(BaseShader):
             fn fs_main(varyings: Varyings) -> FragmentOutput {
                 var out: FragmentOutput;
                 var s = vec4<f32>(u_material.color);
-                s[3] = 0.3;
+                s[3] = 1;
                 out.color = s;
+
+                var l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
+                let pointcoord: vec2<f32> = varyings.pointcoord_p / l2p;
+
+                $$ if write_pick
+                out.pick = (
+                    pick_pack(u32(u_wobject.id), 20) +
+                    pick_pack(varyings.pick_idx, 26) +
+                    pick_pack(u32(pointcoord.x + 256.0), 9) +
+                    pick_pack(u32(pointcoord.y + 256.0), 9)
+                );
+                $$ endif
                 return out;
             }
         """
 
 
-class TranformHelper(gfx.Mesh):
+class TranformHelper(gfx.WorldObject):
     def __init__(self, geometry=None, material=None, *args, **kwargs):
         super().__init__(geometry, material, *args, **kwargs)
-        origin_radius = 0.00015
-        axis_length = 0.008
-        axis_size = 0.00008
+
+        self._ref = None
+        self._object_to_control = self 
+        self._camera = None
+        self._ndc_to_screen = None
+
+        self._create_elements()
+        self.add_event_handler(self._process_event,"pointer_down","pointer_move","pointer_up","wheel")
+        
+    def _create_elements(self):
+        axis_length = 0.01
+        axis_size = 0.0002
         arrow_length = 0.002
-        arrow_size = 0.0004
+        arrow_size = 0.001
 
         # 原点
-        point = gfx.Points(gfx.Geometry(positions=[(0,0,0)]), OriginMaterial(pick_write=True))
-        self.add(point)
+        origin = gfx.Points(gfx.Geometry(positions=[(0,0,0)]), OriginMaterial(pick_write=True))
+        self.add(origin)
+
+        self._origin = origin
 
         # X轴 (红色)
-        geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length - arrow_length)
-        geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length / 2 + origin_radius,0,0)
-        mat = AxisMaterial(color='red',pick_write=True)
+        geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length)
+        geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length / 2,0,0)
+        mat = AxisMaterial(color='red',size=200,pick_write=True)
         x_axis = gfx.WorldObject(geom,mat)
         
         # 添加轴端点箭头
-        arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='red',pick_write=True))
-        arrow.geometry.positions.data[:] = la.vec_transform_quat(arrow.geometry.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length + origin_radius,0,0)
-        x_axis.add(arrow)
+        x_arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='red',size=200,pick_write=True))
+        x_arrow.geometry.positions.data[:] = la.vec_transform_quat(x_arrow.geometry.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length,0,0) 
         self.add(x_axis)
+        self.add(x_arrow)
 
         # Y轴 (绿色)
-        geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length - arrow_length)
-        geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length / 2 + origin_radius,0)
-        mat = AxisMaterial(color='green',pick_write=True)
+        geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length)
+        geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length / 2,0)
+        mat = AxisMaterial(color='green',size=200,pick_write=True)
         y_axis = gfx.WorldObject(geom,mat)
-         
+
         # 添加轴端点箭头
-        arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='green',pick_write=True))
-        arrow.geometry.positions.data[:] = la.vec_transform_quat(arrow.geometry.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length + origin_radius,0)
-        y_axis.add(arrow)
+        y_arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='green',size=200,pick_write=True))
+        y_arrow.geometry.positions.data[:] = la.vec_transform_quat(y_arrow.geometry.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length,0)
         self.add(y_axis)
+        self.add(y_arrow)
+
+        self._translate_children = x_axis, y_axis, x_arrow, y_arrow
+
+        x_axis.dim = x_arrow.dim = 0
+        y_axis.dim = y_arrow.dim = 1
+        self._origin.dim = (0,1)
+
+    def _update_ndc_screen_transform(self):
+        # Note: screen origin is at top left corner of NDC with Y-axis pointing down
+        x_dim, y_dim = self._camera.logical_size
+        screen_space = AffineTransform()
+        screen_space.position = (-1, 1, 0)
+        screen_space.scale = (2 / x_dim, -2 / y_dim, 1)
+        self._ndc_to_screen = screen_space.inverse_matrix
+        self._screen_to_ndc = screen_space.matrix
+
+    def _process_event(self, event):
+        self._update_ndc_screen_transform()
+        self._update_directions()
+
+        type = event.type
+
+        if type == "pointer_down":
+            if event.button != 3 or event.modifiers:
+                return
+            self._ref = None
+            # NOTE: I imagine that if multiple tools are active, they
+            # each ask for picking info, causing multiple buffer reads
+            # for the same location. However, with the new event system
+            # this is probably not a problem, when wobjects receive events.
+            ob = event.target
+            if ob not in self.children:
+                return
+
+            print(ob)
+            # Depending on the object under the pointer, we scale/translate/rotate
+            if ob == self._origin:
+                self._handle_start("translate", event, ob)
+            elif ob in self._translate_children:
+                self._handle_start("translate", event, ob)
+            # elif ob in self._scale_children:
+            #     self._handle_start("scale", event, ob)
+            # elif ob in self._rotate_children:
+            #     self._handle_start("rotate", event, ob)
+            # Highlight the object
+            # self._highlight(ob)
+            self.set_pointer_capture(event.pointer_id, event.root)
+
+        elif type == "pointer_up":
+            if not self._ref:
+                return
+            if self._ref["dim"] is None and self._ref["maxdist"] < 3:
+                # self.toggle_mode()  # clicked on the center sphere
+                pass
+            self._ref = None
+            # De-highlight the object
+            # self._highlight()
+
+        elif type == "pointer_move":
+            if not self._ref:
+                return
+            # Get how far we've moved from starting point - we have a dead zone
+            dist = (
+                (event.x - self._ref["event_pos"][0]) ** 2
+                + (event.y - self._ref["event_pos"][1]) ** 2
+            ) ** 0.5
+            self._ref["maxdist"] = max(self._ref["maxdist"], dist)
+            # Delegate to the correct handler
+            if self._ref["maxdist"] < 3:
+                pass
+            elif self._ref["kind"] == "translate":
+                self._handle_translate_move(event)
+
+
+    def _handle_start(self, kind, event, ob: WorldObject):
+        this_pos = self._object_to_control.world.position
+        ob_pos = ob.world.position
+        self._ref = {
+            "kind": kind,
+            "event_pos": np.array((event.x, event.y)),
+            "dim": ob.dim,
+            "maxdist": 0,
+            # Transform at time of start
+            "pos": self._object_to_control.world.position,
+            "scale": self._object_to_control.world.scale,
+            "rot": self._object_to_control.world.rotation,
+            "world_pos": ob_pos,
+            "world_offset": ob_pos - this_pos,
+            "ndc_pos": la.vec_transform(ob_pos, self._camera.camera_matrix),
+            # Gizmo direction state at start-time of drag
+            "flips": np.sign(self.world.scale),
+            "world_directions": self._world_directions.copy(),
+            "ndc_directions": self._ndc_directions.copy(),
+            "screen_directions": self._screen_directions.copy(),
+        }
+
+    def _handle_translate_move(self, event):
+        """Translate action, either using a translate1 or translate2 handle."""
+
+        world_to_screen = self._ndc_to_screen @ self._camera.camera_matrix
+        screen_to_world = la.mat_inverse(world_to_screen)
+
+        if isinstance(self._ref["dim"], int):
+            travel_directions = (self._ref["dim"],)
+        else:
+            travel_directions = self._ref["dim"]
+
+        screen_travel = np.array(
+            (
+                event.x - self._ref["event_pos"][0],
+                event.y - self._ref["event_pos"][1],
+            )
+        )
+
+        # units dragged along gizmo axes
+        screen_directions = self._ref["screen_directions"][travel_directions, :]
+        if len(screen_directions) == 1:
+            # translate 1D: only count movement along translation axis
+            units_traveled = get_scale_factor(screen_directions[..., :2], screen_travel)
+        else:
+            # translate 2D: change basis from screen to gizmo axes
+            screen_to_axes = la.mat_inverse(screen_directions[..., :2].T)
+            units_traveled = screen_to_axes @ screen_travel
+
+        # pixel units to world units
+        # Note: location of translation matters because perspective cameras have
+        # shear, i.e., we need to account for start
+        start = la.vec_transform(self._ref["world_pos"], world_to_screen)
+        end = start + screen_directions.T @ units_traveled
+        end_world = la.vec_transform(end, screen_to_world)
+        world_units_traveled = end_world - self._ref["world_pos"]
+
+        self._object_to_control.world.position = self._ref["pos"] + world_units_traveled
+
+    def _update_directions(self):
+        """
+        Calculate how much 1 unit of translation in the draggable space (aka
+        mode) translates the object in world and screen space.
+
+        """
+
+        # work out the transforms between the spaces
+        camera = self._camera
+
+        local_to_world = self._object_to_control.world.matrix
+        local_to_ndc = camera.camera_matrix @ local_to_world
+        local_to_screen = self._ndc_to_screen @ local_to_ndc
+
+        # points referring to local coordinate axes and origin
+        local_points = np.zeros((4, 3))
+        local_points[1:, :] = np.eye(3)
+
+        # express unit vectors and origin in the various frames
+        world_points = la.vec_transform(local_points, local_to_world)
+        ndc_points = la.vec_transform(local_points, local_to_ndc)
+        screen_points = la.vec_transform(local_points, local_to_screen)
+
+        # store the directions for future use
+        self._world_directions = world_points[1:] - world_points[0]
+        self._ndc_directions = ndc_points[1:] - ndc_points[0]
+        self._screen_directions = screen_points[1:] - screen_points[0]
+    
+def get_scale_factor(vec1, vec2):
+    """
+    Vector project vec2 onto vec1. Aka, figure out how long vec2
+    is when measured along vec1.
+
+    This is used, for example, to work out how many units the cursor has
+    traveled along a given direction.
+    """
+
+    # Note: implementing it like this saves a couple square-roots from
+    # normalizing
+    return np.sum(vec2 * vec1, axis=-1) / np.sum(vec1**2, axis=-1)
+
+
+def deg_to_rad(degrees):
+    return degrees / 360 * (2 * np.pi)
+
 
 class Text(TranformHelper):
     def __init__(self,text):
@@ -432,6 +645,7 @@ class Engravtor(gfx.WorldObject):
 
         camera : gfx.PerspectiveCamera = next(tool.iter(lambda o: o.name == '摄像头'))
         camera.show_pos(self.target_area.world.position,up=[0,0,1])
+        camera.local.scale = 1
 
         persp_camera : gfx.PerspectiveCamera = next(tool.iter(lambda o: o.name == '观察点'))
         persp_camera.show_pos(self.target_area.world.position,up=[0,0,1],depth=1.0)
@@ -477,6 +691,7 @@ class Engravtor(gfx.WorldObject):
             element = Text('Text')
             element_height_offset = target_height / 2 + 0.0001
             element.local.z += element_height_offset
+            element._camera = self.persp_camera
             target.add(element)
         def bitmap():
             target = self.target_area.children[0]
@@ -487,6 +702,7 @@ class Engravtor(gfx.WorldObject):
             element_height_offset = target_height / 2 + 0.0001
             element.local.z += element_height_offset
             element.local.x -= 0.05
+            element._camera = self.persp_camera 
             target.add(element)
 
         def vectorgraph():
@@ -498,6 +714,7 @@ class Engravtor(gfx.WorldObject):
             element_height_offset = target_height / 2 + 0.0001
             element.local.z += element_height_offset
             element.local.x += 0.05
+            element._camera = self.persp_camera
             target.add(element)
 
         return [('文本',text,'format-text-bold'),('位图',bitmap,'image-x-generic-symbolic'),('矢量图',vectorgraph,None)]
