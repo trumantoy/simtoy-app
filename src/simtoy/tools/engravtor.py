@@ -1,4 +1,5 @@
 from trimesh.creation import cylinder
+from trimesh.visual import texture
 import wgpu
 import pygfx as gfx
 from pygfx.renderers.wgpu import *
@@ -26,7 +27,6 @@ class OriginMaterial(Material):
 
     def __init__(self, *, color='black', size=5.0, **kwargs):
         super().__init__(**kwargs)
-        print(kwargs)
         self.color = gfx.Color('orange')
         self.size = float(size)
 
@@ -187,7 +187,7 @@ class OriginShader(BaseShader):
                 // length(pointcoord) 计算到中心的欧几里得距离
                 // 0.5 * size_p 是圆的半径
                 // 正值：点在圆外部，负值：点在圆内部，0值：点在圆边界上
-                var dist_to_edge = length(varyings.pointcoord_p) - 2.0 * varyings.size_p;
+                var dist_to_edge = length(varyings.pointcoord_p) - 0.5 * varyings.size_p;
                 
                 // 描边逻辑：判断当前片段是否在描边范围内
                 var l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
@@ -350,10 +350,8 @@ class AxisShader(BaseShader):
 
             @fragment
             fn fs_main(varyings: Varyings) -> FragmentOutput {
-                var out: FragmentOutput;
-                var s = vec4<f32>(u_material.color);
-                s[3] = 1;
-                out.color = s;
+                var out: FragmentOutput; 
+                out.color = vec4<f32>(u_material.color);
 
                 var l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
                 let pointcoord: vec2<f32> = varyings.pointcoord_p / l2p;
@@ -382,7 +380,15 @@ class TranformHelper(gfx.WorldObject):
 
         self._create_elements()
         self.add_event_handler(self._process_event,"pointer_down","pointer_move","pointer_up","wheel")
-        
+    
+    def set_tranform_visible(self,visible):
+        self.axis_x.visible = visible
+        self.axis_y.visible = visible
+        self.arrow_x.visible = visible
+        self.arrow_y.visible = visible
+        self.origin.visible = visible
+        self.plane_xy.visible = visible
+
     def _create_elements(self):
         axis_length = 0.01
         axis_size = 0.0002
@@ -390,40 +396,45 @@ class TranformHelper(gfx.WorldObject):
         arrow_size = 0.001
 
         # 原点
-        origin = gfx.Points(gfx.Geometry(positions=[(0,0,0)]), OriginMaterial(pick_write=True))
-        self.add(origin)
-
-        self._origin = origin
+        self.origin = gfx.Points(gfx.Geometry(positions=[(0,0,0)]), OriginMaterial(pick_write=True))
+        self.add(self.origin)
 
         # X轴 (红色)
         geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length)
         geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length / 2,0,0)
         mat = AxisMaterial(color='red',size=200,pick_write=True)
-        x_axis = gfx.WorldObject(geom,mat)
+        self.axis_x = gfx.WorldObject(geom,mat)
         
         # 添加轴端点箭头
-        x_arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='red',size=200,pick_write=True))
-        x_arrow.geometry.positions.data[:] = la.vec_transform_quat(x_arrow.geometry.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length,0,0) 
-        self.add(x_axis)
-        self.add(x_arrow)
+        geom = gfx.cone_geometry(arrow_size,arrow_length)
+        self.arrow_x = gfx.Mesh(geom, AxisMaterial(color='red',size=200,pick_write=True))
+        self.arrow_x.geometry.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((0, np.pi/2, 0))) + (axis_length,0,0) 
+        self.add(self.axis_x)
+        self.add(self.arrow_x)
 
         # Y轴 (绿色)
         geom = gfx.cylinder_geometry(radius_bottom=axis_size,radius_top=axis_size,height=axis_length)
         geom.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length / 2,0)
         mat = AxisMaterial(color='green',size=200,pick_write=True)
-        y_axis = gfx.WorldObject(geom,mat)
+        self.axis_y = gfx.WorldObject(geom,mat)
 
         # 添加轴端点箭头
-        y_arrow = gfx.Mesh(gfx.cone_geometry(arrow_size,arrow_length), AxisMaterial(color='green',size=200,pick_write=True))
-        y_arrow.geometry.positions.data[:] = la.vec_transform_quat(y_arrow.geometry.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length,0)
-        self.add(y_axis)
-        self.add(y_arrow)
+        geom = gfx.cone_geometry(arrow_size,arrow_length)
+        self.arrow_y = gfx.Mesh(geom, AxisMaterial(color='green',size=200,pick_write=True))
+        self.arrow_y.geometry.positions.data[:] = la.vec_transform_quat(geom.positions.data, la.quat_from_euler((-np.pi/2,0, 0))) + (0,axis_length,0)
+        self.add(self.axis_y)
+        self.add(self.arrow_y)
 
-        self._translate_children = x_axis, y_axis, x_arrow, y_arrow
+        plane_geo = gfx.plane_geometry(0.002, 0.002)
+        plane_geo.positions.data[:] = plane_geo.positions.data + (0.001,0.001,0)
+        self.plane_xy = gfx.Mesh(plane_geo,AxisMaterial(color='dodgerblue',size=200,pick_write=True))
+        self.add(self.plane_xy)
 
-        x_axis.dim = x_arrow.dim = 0
-        y_axis.dim = y_arrow.dim = 1
-        self._origin.dim = (0,1)
+        self._translate_children = self.axis_x, self.axis_y, self.arrow_x, self.arrow_y, self.plane_xy
+
+        self.axis_x.dim = self.arrow_x.dim = 0
+        self.axis_y.dim = self.arrow_y.dim = 1
+        self.plane_xy.dim = (0,1)
 
     def _update_ndc_screen_transform(self):
         # Note: screen origin is at top left corner of NDC with Y-axis pointing down
@@ -451,19 +462,16 @@ class TranformHelper(gfx.WorldObject):
             ob = event.target
             if ob not in self.children:
                 return
-
-            print(ob)
             # Depending on the object under the pointer, we scale/translate/rotate
-            if ob == self._origin:
+            if ob in self._translate_children:
                 self._handle_start("translate", event, ob)
-            elif ob in self._translate_children:
-                self._handle_start("translate", event, ob)
+            else:
+                self.set_tranform_visible(True)
             # elif ob in self._scale_children:
             #     self._handle_start("scale", event, ob)
             # elif ob in self._rotate_children:
             #     self._handle_start("rotate", event, ob)
             # Highlight the object
-            # self._highlight(ob)
             self.set_pointer_capture(event.pointer_id, event.root)
 
         elif type == "pointer_up":
@@ -490,7 +498,6 @@ class TranformHelper(gfx.WorldObject):
                 pass
             elif self._ref["kind"] == "translate":
                 self._handle_translate_move(event)
-
 
     def _handle_start(self, kind, event, ob: WorldObject):
         this_pos = self._object_to_control.world.position
@@ -600,35 +607,38 @@ def deg_to_rad(degrees):
 
 class Text(TranformHelper):
     def __init__(self,text):
-        text = gfx.Text(text=text,font_size=0.01,material=gfx.TextMaterial())
-        aabb = text.get_bounding_box()
-        super().__init__(gfx.plane_geometry(aabb[1][0]-aabb[0][0], aabb[1][1]-aabb[0][1]))
+        super().__init__()
+        text = gfx.Text(text=text,font_size=0.01,material=gfx.TextMaterial(pick_write=True))
         self.add(text)
-    
+
 class Bitmap(TranformHelper):
     def __init__(self):
+        super().__init__()
         im = (np.indices((10, 10)).sum(axis=0) % 2).astype(np.float32)
         tex = gfx.Texture(im*255,dim=2)
-        super().__init__(gfx.plane_geometry(0.02,0.02),gfx.MeshBasicMaterial(pick_write=True,map=gfx.TextureMap(tex,filter='nearest')))
+        obj = gfx.Mesh(gfx.plane_geometry(0.02,0.02),gfx.MeshBasicMaterial(pick_write=True,map=gfx.TextureMap(tex,filter='nearest')))
+        self.add(obj)
 
 class Vectorgraph(TranformHelper):
     def __init__(self):
+        super().__init__()
         # 一个简单的 SVG 示例：带边框的圆和文字
-        svg = '''<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="255.5" cy="255.5" r="255" stroke="#ffffff" stroke-width="10"/>
+        svg = '''<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="512" cy="512" r="512" stroke="#ffffff" stroke-width="10"/>
             </svg>'''
 
         # 使用 CairoSVG 在内存中栅格化为 PNG 字节
-        data = svg2png(bytestring=svg.encode("utf-8"),output_width=512,output_height=512)
+        data = svg2png(bytestring=svg.encode("utf-8"),output_width=1024,output_height=1024)
         img = Image.open(io.BytesIO(data)).convert("RGBA")
         arr = np.array(img)
 
         # 创建纹理贴到平面
         tex = gfx.Texture(arr,dim=2)
         geom = gfx.plane_geometry(0.02, 0.02)
-        mat = gfx.MeshBasicMaterial(map=gfx.TextureMap(tex, filter='linear'))
-        super().__init__(geom, mat)
-
+        mat = gfx.MeshBasicMaterial(pick_write=True,map=gfx.TextureMap(tex, filter='linear'))
+        obj = gfx.Mesh(geom,mat)
+        self.add(obj)
+        
 
 class Engravtor(gfx.WorldObject):
     def __init__(self,env_map = None):
@@ -670,6 +680,7 @@ class Engravtor(gfx.WorldObject):
 
     def set_consumable(self,name):
         target : gfx.WorldObject = next(self.scene.iter(lambda o: o.name == name))
+        target.material.pick_write = True
         target.cast_shadow = True
         target.receive_shadow=True
         target.local.position = self.target_area.local.position
@@ -678,6 +689,13 @@ class Engravtor(gfx.WorldObject):
         target_height_offset = target_height / 2
         target.local.z += target_height_offset
         self.target_area.add(target)
+    
+        target.add_event_handler(lambda e: e.button == 3 and self.unselect_all(target),'pointer_down')
+
+    def unselect_all(self,parent : gfx.WorldObject):
+        for obj in parent.children:
+            obj : TranformHelper
+            obj.set_tranform_visible(False)
 
     def get_viewport(self):
         return [self.persp_camera]
@@ -689,20 +707,24 @@ class Engravtor(gfx.WorldObject):
             target_height = (aabb[1][2] - aabb[0][2])
             
             element = Text('Text')
-            element_height_offset = target_height / 2 + 0.0001
+            element_height_offset = target_height / 2 
             element.local.z += element_height_offset
             element._camera = self.persp_camera
+            element.set_tranform_visible(False)
             target.add(element)
+
+            # element.add_event_handler(lambda e: e.button == 3 and self.unselect_all(target),'pointer_down')
+
         def bitmap():
             target = self.target_area.children[0]
             aabb = target.get_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
             element = Bitmap()
-            element_height_offset = target_height / 2 + 0.0001
+            element_height_offset = target_height / 2
             element.local.z += element_height_offset
-            element.local.x -= 0.05
             element._camera = self.persp_camera 
+            element.set_tranform_visible(False)
             target.add(element)
 
         def vectorgraph():
@@ -711,10 +733,10 @@ class Engravtor(gfx.WorldObject):
             target_height = (aabb[1][2] - aabb[0][2])
             
             element = Vectorgraph()
-            element_height_offset = target_height / 2 + 0.0001
+            element_height_offset = target_height / 2
             element.local.z += element_height_offset
-            element.local.x += 0.05
             element._camera = self.persp_camera
+            element.set_tranform_visible(False)
             target.add(element)
 
         return [('文本',text,'format-text-bold'),('位图',bitmap,'image-x-generic-symbolic'),('矢量图',vectorgraph,None)]

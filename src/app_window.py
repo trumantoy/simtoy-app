@@ -47,12 +47,8 @@ class AppWindow (Gtk.ApplicationWindow):
         
         click_controller = Gtk.GestureClick.new()
         click_controller.set_button(1)
-        click_controller.connect("pressed", lambda sender,n_press,x,y: 
-                                    self.renderer.convert_event(dict(event_type='pointer_down',x=x ,y=y,button=3,buttons=(3,),time_stamp=time.perf_counter())))
-        click_controller.connect("released", lambda sender,n_press,x,y: 
-                                    self.renderer.convert_event(dict(event_type='pointer_up',x=x ,y=y,button=3,buttons=(3,),time_stamp=time.perf_counter())) or
-                                    self.pick(x,y))
-
+        click_controller.connect("pressed", lambda sender,n_press,x,y: self.renderer.convert_event(dict(event_type='pointer_down',x=x ,y=y,button=3,buttons=(3,),time_stamp=time.perf_counter())))
+        click_controller.connect("released", lambda sender,n_press,x,y: self.renderer.convert_event(dict(event_type='pointer_up',x=x ,y=y,button=3,buttons=(3,),time_stamp=time.perf_counter())) or self.pick(x,y))
 
         rotation_controller = Gtk.GestureClick.new()
         rotation_controller.set_button(2)
@@ -98,10 +94,8 @@ class AppWindow (Gtk.ApplicationWindow):
         for c in self.tool.get_viewport(): self.camera_controller.add_camera(c)
         self.hotbar.set_items(self.tool.get_hot_items())
         
-
     def pick(self,x,y):
-        info = self.renderer.get_pick_info([x,y])
-
+        info = self.rxenderer.get_pick_info([x,y])
 
         # GLib.timeout_add(10,lambda: self.camera_controller.remove_camera(camera))
         # if self.panel.selected_item:
