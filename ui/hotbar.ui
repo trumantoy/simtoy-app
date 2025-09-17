@@ -12,13 +12,14 @@
 
         <child>
             <object class="GtkBox" id="tools">
+                <property name="orientation">vertical</property>
                 <property name="spacing">5</property>
                 <property name="homogeneous">True</property>
                 <child>
                     <object class="GtkButton" id="point">
                         <property name="label">文本</property>
-                        <property name="height-request">80</property>
-                        <property name="width-request">80</property>
+                        <property name="height-request">50</property>
+                        <property name="width-request">50</property>
                     </object>
                 </child>
                 <child>

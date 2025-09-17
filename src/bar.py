@@ -145,6 +145,10 @@ class Hotbar (Gtk.ScrolledWindow):
         provider.load_from_path('ui/hotbar.css')
         Gtk.StyleContext.add_provider_for_display(self.get_display(),provider,Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
+    @GObject.Signal(return_type=bool, arg_types=(object,))
+    def item_added(self,*args): 
+        pass
+        
     def set_items(self,items):
         widget = self.tools.get_first_child()
         while widget:
@@ -153,9 +157,12 @@ class Hotbar (Gtk.ScrolledWindow):
             widget = next_widget
 
         for text,action,icon in items:
+            def callback(sender,f):
+                self.emit('item_added', f())
+
             button = Gtk.Button()
-            button.connect('clicked',lambda sender,f: f(), action)
+            button.connect('clicked',callback, action)
             button.set_label(text)
-            button.set_size_request(80,80)
+            button.set_size_request(50,50)
             if icon: button.set_icon_name(icon)
             self.tools.append(button)

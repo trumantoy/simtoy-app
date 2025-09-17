@@ -87,8 +87,8 @@
               <!-- 工具栏 -->
               <child type="overlay">
                 <object class="Hotbar" id="hotbar">
-                  <property name="halign">center</property>
-                  <property name="valign">end</property>
+                  <property name="halign">start</property>
+                  <property name="valign">start</property>
                   <property name="visible">True</property>
                   <property name="opacity">0.8</property>
                 </object>

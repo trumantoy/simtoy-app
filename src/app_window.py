@@ -84,7 +84,7 @@ class AppWindow (Gtk.ApplicationWindow):
         self.light = gfx.PointLight(intensity=1)
         self.editor.add(self.light)
 
-        self.tool = Engravtor(env_map = self.editor.env_map)
+        self.tool = Engravtor(name='M3-00-355紫外打标机')
         self.tool.set_consumable('木板-110x110x1')
         self.editor.add(self.tool)
         
@@ -92,10 +92,13 @@ class AppWindow (Gtk.ApplicationWindow):
         # self.camera_controller.add_camera(self.editor.persp_camera)
         # self.camera_controller.add_camera(self.editor.ortho_camera)
         for c in self.tool.get_viewport(): self.camera_controller.add_camera(c)
+
+        self.panel.add(self.tool)
         self.hotbar.set_items(self.tool.get_hot_items())
+        self.hotbar.connect('item_added',lambda sender,obj: self.panel.add(obj,self.tool))
         
     def pick(self,x,y):
-        info = self.rxenderer.get_pick_info([x,y])
+        info = self.renderer.get_pick_info([x,y])
 
         # GLib.timeout_add(10,lambda: self.camera_controller.remove_camera(camera))
         # if self.panel.selected_item:
@@ -116,7 +119,7 @@ class AppWindow (Gtk.ApplicationWindow):
         #     self.panel.selection_model.unselect_all()
         # self.panel.selected_item = item
 
-    def draw(self,receiver, cr, area_w, area_h):
+    def draw(self,area, cr : cairo.Context, area_w, area_h):
         self.editor.step()
 
         width,height = self.canvas.get_physical_size()
@@ -141,7 +144,7 @@ class AppWindow (Gtk.ApplicationWindow):
 
         cr.paint()
 
-        GLib.timeout_add(30,receiver.queue_draw)
+        GLib.idle_add(area.queue_draw)
 
     def file_import(self, sender, args):
         dialog = Gtk.FileDialog()

@@ -8,12 +8,109 @@ from pygfx.materials import Material
 from pygfx.utils.transform import AffineTransform
 import pylinalg as la
 from importlib.resources import files
-
-
 import numpy as np
-import io
-from PIL import Image
-from cairosvg import svg2png
+
+import serial
+import time
+
+class GrblController:
+    def __init__(self, port, baudrate=115200, timeout=1):
+        """初始化Grbl控制器连接"""
+        self.serial = None
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self.connected = False
+        
+    def connect(self):
+        """连接到Grbl控制器"""
+        try:
+            self.serial = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                timeout=self.timeout
+            )
+            # 等待Grbl启动
+            time.sleep(2)
+            # 发送初始化命令
+            self.serial.write(b'\r\n\r\n')
+            time.sleep(2)
+            # 清空缓冲区
+            self.serial.flushInput()
+            self.connected = True
+            print(f"成功连接到Grbl控制器: {self.port}")
+            return True
+        except Exception as e:
+            print(f"连接失败: {str(e)}")
+            return False
+    
+    def disconnect(self):
+        """断开与Grbl控制器的连接"""
+        if self.connected and self.serial:
+            self.serial.close()
+            self.connected = False
+            print("已断开与Grbl控制器的连接")
+    
+    def send_command(self, command):
+        """发送G代码命令到Grbl控制器"""
+        if not self.connected:
+            print("未连接到控制器，请先连接")
+            return False
+            
+        try:
+            # 添加换行符作为命令结束标志
+            full_command = command + '\n'
+            self.serial.write(full_command.encode('utf-8'))
+            # 等待响应
+            response = self.serial.readline().decode('utf-8').strip()
+            
+            # 检查响应是否为OK或包含错误信息
+            if response == 'ok':
+                print(f"命令发送成功: {command}")
+                return True
+            elif response.startswith('error'):
+                print(f"命令执行错误: {response} - 命令: {command}")
+                return False
+            else:
+                # 某些命令可能返回其他信息
+                print(f"命令响应: {response} - 命令: {command}")
+                return True
+        except Exception as e:
+            print(f"发送命令出错: {str(e)}")
+            return False
+    
+    def spindle_on_clockwise(self, speed=None):
+        """
+        主轴顺时针旋转 (M3指令)
+        speed: 转速，单位通常为RPM，如1000表示1000RPM
+        """
+        if speed:
+            # M3 Sxxx 格式，S后面跟转速
+            command = f"M3 S{speed}"
+        else:
+            # 仅启动主轴，不指定转速
+            command = "M3"
+        
+        return self.send_command(command)
+    
+    def spindle_off(self):
+        """主轴停止 (M5指令)"""
+        return self.send_command("M5")
+    
+    def get_status(self):
+        """获取Grbl状态信息"""
+        if not self.connected:
+            print("未连接到控制器，请先连接")
+            return None
+            
+        try:
+            # 发送状态请求
+            self.serial.write(b'?')
+            response = self.serial.readline().decode('utf-8').strip()
+            return response
+        except Exception as e:
+            print(f"获取状态出错: {str(e)}")
+            return None
 
 
 class OriginMaterial(Material):
@@ -90,6 +187,7 @@ class OriginShader(BaseShader):
         }
 
     def get_code(self):
+
         return """
             {$ include 'pygfx.std.wgsl' $}
 
@@ -351,7 +449,7 @@ class AxisShader(BaseShader):
             @fragment
             fn fs_main(varyings: Varyings) -> FragmentOutput {
                 var out: FragmentOutput; 
-                out.color = vec4<f32>(u_material.color);
+                out.color = vec4<f32>(u_material.color.xyz,1);
 
                 var l2p = u_stdinfo.physical_size.x / u_stdinfo.logical_size.x;
                 let pointcoord: vec2<f32> = varyings.pointcoord_p / l2p;
@@ -367,7 +465,6 @@ class AxisShader(BaseShader):
                 return out;
             }
         """
-
 
 class TranformHelper(gfx.WorldObject):
     def __init__(self, geometry=None, material=None, *args, **kwargs):
@@ -586,7 +683,7 @@ class TranformHelper(gfx.WorldObject):
         self._world_directions = world_points[1:] - world_points[0]
         self._ndc_directions = ndc_points[1:] - ndc_points[0]
         self._screen_directions = screen_points[1:] - screen_points[0]
-    
+
 def get_scale_factor(vec1, vec2):
     """
     Vector project vec2 onto vec1. Aka, figure out how long vec2
@@ -600,16 +697,21 @@ def get_scale_factor(vec1, vec2):
     # normalizing
     return np.sum(vec2 * vec1, axis=-1) / np.sum(vec1**2, axis=-1)
 
-
 def deg_to_rad(degrees):
     return degrees / 360 * (2 * np.pi)
 
+class Label(TranformHelper):
+    def __init__(self,text,font_size,family,*args,**kwargs):
+        super().__init__(*args,**kwargs)
 
-class Text(TranformHelper):
-    def __init__(self,text):
-        super().__init__()
-        text = gfx.Text(text=text,font_size=0.01,material=gfx.TextMaterial(pick_write=True))
-        self.add(text)
+        self.text = text
+        self.font_size = font_size
+        self.family = family
+
+        obj = gfx.Text(material=gfx.TextMaterial(pick_write=True),
+                        text=text,font_size=font_size,family=family)
+        self.add(obj)
+
 
 class Bitmap(TranformHelper):
     def __init__(self):
@@ -619,39 +721,17 @@ class Bitmap(TranformHelper):
         obj = gfx.Mesh(gfx.plane_geometry(0.02,0.02),gfx.MeshBasicMaterial(pick_write=True,map=gfx.TextureMap(tex,filter='nearest')))
         self.add(obj)
 
-class Vectorgraph(TranformHelper):
-    def __init__(self):
-        super().__init__()
-        # 一个简单的 SVG 示例：带边框的圆和文字
-        svg = '''<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="512" cy="512" r="512" stroke="#ffffff" stroke-width="10"/>
-            </svg>'''
-
-        # 使用 CairoSVG 在内存中栅格化为 PNG 字节
-        data = svg2png(bytestring=svg.encode("utf-8"),output_width=1024,output_height=1024)
-        img = Image.open(io.BytesIO(data)).convert("RGBA")
-        arr = np.array(img)
-
-        # 创建纹理贴到平面
-        tex = gfx.Texture(arr,dim=2)
-        geom = gfx.plane_geometry(0.02, 0.02)
-        mat = gfx.MeshBasicMaterial(pick_write=True,map=gfx.TextureMap(tex, filter='linear'))
-        obj = gfx.Mesh(geom,mat)
-        self.add(obj)
-        
-
 class Engravtor(gfx.WorldObject):
-    def __init__(self,env_map = None):
-        super().__init__()
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
         path = files("simtoy.data.engravtor") / "engravtor.gltf"
         self.scene : gfx.Scene = gfx.load_gltf(path).scene
         self.scene.traverse(lambda o: setattr(o,'cast_shadow',True) or setattr(o,'receive_shadow',True),True)
-        # self.scene.traverse(lambda o: o.material is not None and setattr(o.material,'env_map',env_map),True)
 
         tool : gfx.WorldObject = self.scene.children[0]
         self.add(tool)
 
-        self.target_area : gfx.PerspectiveCamera = next(tool.iter(lambda o: o.name == '工作区-内'))
+        self.target_area : gfx.WorldObject = next(tool.iter(lambda o: o.name == '工作区-内'))
 
         camera : gfx.PerspectiveCamera = next(tool.iter(lambda o: o.name == '摄像头'))
         camera.show_pos(self.target_area.world.position,up=[0,0,1])
@@ -668,15 +748,25 @@ class Engravtor(gfx.WorldObject):
         # self.controller.add_camera(persp_camera)
         # self.controller.add_camera(ortho_camera)
 
+        # self.controller = GrblController()
+        # self.controller.connect()
+
+        self.init_params()
+
+    def init_params(self):
+        self.y_lim = self.x_lim = (0,0.100)
+        self.light_spot_size = 0.0000075
+        self.pixels_per_m = 1000000
+        
     def step(self,dt):
         # self.persp_camera.world.z = self.target_area.world.z
-        pass
+        pass    
 
     def get_view_focus(self):
         return self.camera.local.position,self.target_area.local.position
 
     def get_consumables(self):
-        return ['摄像头画面','木板-110x110x1','木板-110x110x10']
+        return ['木板-110x110x1','木板-110x110x10']
 
     def set_consumable(self,name):
         target : gfx.WorldObject = next(self.scene.iter(lambda o: o.name == name))
@@ -701,18 +791,18 @@ class Engravtor(gfx.WorldObject):
         return [self.persp_camera]
 
     def get_hot_items(self):
-        def text():
+        def label():
             target = self.target_area.children[0]
             aabb = target.get_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
-            element = Text('Text')
+            element = Label('中国制造',0.01,'KaiTi',name='文本')
             element_height_offset = target_height / 2 
             element.local.z += element_height_offset
             element._camera = self.persp_camera
             element.set_tranform_visible(False)
             target.add(element)
-
+            return element 
             # element.add_event_handler(lambda e: e.button == 3 and self.unselect_all(target),'pointer_down')
 
         def bitmap():
@@ -726,20 +816,160 @@ class Engravtor(gfx.WorldObject):
             element._camera = self.persp_camera 
             element.set_tranform_visible(False)
             target.add(element)
+            return element 
 
-        def vectorgraph():
-            target = self.target_area.children[0]
-            aabb = target.get_bounding_box()
-            target_height = (aabb[1][2] - aabb[0][2])
-            
-            element = Vectorgraph()
-            element_height_offset = target_height / 2
-            element.local.z += element_height_offset
-            element._camera = self.persp_camera
-            element.set_tranform_visible(False)
-            target.add(element)
-
-        return [('文本',text,'format-text-bold'),('位图',bitmap,'image-x-generic-symbolic'),('矢量图',vectorgraph,None)]
+        return [('文本',label,'format-text-bold'),('位图',bitmap,'image-x-generic-symbolic')]
 
     def get_actbar(self):
         return []
+
+    def export_svg(self,file_name):
+        import cairo
+        width = (self.x_lim[1] - self.x_lim[0]) * 1000
+        height = (self.y_lim[1] - self.y_lim[0]) * 1000
+
+        with cairo.SVGSurface(file_name, width, height) as surface:
+            cr = cairo.Context(surface)
+            cr.translate(width/2,height/2)
+
+            for obj in self.target_area.children[0].children:
+                if type(obj) == Label:
+                    obj : Label
+                    cr.set_source_rgb(1, 0, 0)
+                    cr.set_line_width(self.light_spot_size * 100000)
+                    cr.set_font_size(obj.font_size * 1000)
+                    cr.select_font_face(obj.family)
+                    ascent, descent, height, max_x_advance, max_y_advance = cr.font_extents()
+                    text_extents = cr.text_extents(obj.text)
+                    cr.move_to(obj.local.x * 1000 - text_extents.width / 2, obj.local.y * 1000 + (text_extents.height / 2) - descent)
+                    cr.text_path(obj.text)
+                    
+                    cr.stroke()
+                elif type(obj) == Bitmap:
+                    pass
+                else:
+                    pass
+
+    def general_gcode(self):
+        from svg2gcode.__main__ import svg2gcode
+        import argparse
+        import tempfile
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False)
+        temp_file.close()
+        svg_filepath = temp_file.name + '.svg'
+        gc_filepath = temp_file.name + '.gc'
+
+        self.export_svg(svg_filepath)
+
+        # defaults
+        cfg = {
+            "pixelsize_default": 0.1,
+            "imagespeed_default": 800,
+            "cuttingspeed_default": 1000,
+            "imagepower_default": 300,
+            "poweroffset_default": 0,
+            "cuttingpower_default": 850,
+            "xmaxtravel_default": 300,
+            "ymaxtravel_default": 400,
+            "rapidmove_default": 10,
+            "noise_default": 0,
+            "overscan_default": 0,
+            "pass_depth_default": 0,
+            "passes_default": 1,
+            "rotate_default": 0,
+            "colorcoded_default": "",
+            "constantburn_default": True,
+        }
+
+        # Define command line argument interface
+        parser = argparse.ArgumentParser(description='Convert svg to gcode for GRBL v1.1 compatible diode laser engravers.')
+        parser.add_argument('svg', type=str, help='svg file to be converted to gcode')
+        parser.add_argument('gcode', type=str, help='gcode output file')
+        parser.add_argument('--showimage', action='store_true', default=False, help='show b&w converted image' )
+        parser.add_argument('--selfcenter', action='store_true', default=False, help='self center the gcode (--origin cannot be used at the same time)' )
+        parser.add_argument('--pixelsize', default=cfg["pixelsize_default"], metavar="<default:" + str(cfg["pixelsize_default"])+">",
+            type=float, help="pixel size in mm (XY-axis): each image pixel is drawn this size")
+        parser.add_argument('--imagespeed', default=cfg["imagespeed_default"], metavar="<default:" + str(cfg["imagespeed_default"])+">",
+            type=int, help='image draw speed in mm/min')
+        parser.add_argument('--cuttingspeed', default=cfg["cuttingspeed_default"], metavar="<default:" + str(cfg["cuttingspeed_default"])+">",
+            type=int, help='cutting speed in mm/min')
+        parser.add_argument('--imagepower', default=cfg["imagepower_default"], metavar="<default:" +str(cfg["imagepower_default"])+ ">",
+            type=int, help="maximum laser power while drawing an image (as a rule of thumb set to 1/3 of the machine maximum for a 5W laser)")
+        parser.add_argument('--poweroffset', default=cfg["poweroffset_default"], metavar="<default:" +str(cfg["poweroffset_default"])+ ">",
+            type=int, help="pixel intensity to laser power: shift power range [0-imagepower]")
+        parser.add_argument('--cuttingpower', default=cfg["cuttingpower_default"], metavar="<default:" +str(cfg["cuttingpower_default"])+ ">",
+            type=int, help="sets laser power of line (path) cutting")
+        parser.add_argument('--passes', default=cfg["passes_default"], metavar="<default:" +str(cfg["passes_default"])+ ">",
+            type=int, help="Number of passes (iterations) for line drawings, only active when pass_depth is set")
+        parser.add_argument('--pass_depth', default=cfg["pass_depth_default"], metavar="<default:" + str(cfg["pass_depth_default"])+">",
+            type=float, help="cutting depth in mm for one pass, only active for passes > 1")
+        parser.add_argument('--rapidmove', default=cfg["rapidmove_default"], metavar="<default:" + str(cfg["rapidmove_default"])+ ">",
+            type=int, help='generate G0 moves between shapes, for images: G0 moves when skipping more than 10mm (default), 0 is no G0 moves' )
+        parser.add_argument('--noise', default=cfg["noise_default"], metavar="<default:" +str(cfg["noise_default"])+ ">",
+            type=int, help='reduces image noise by not emitting pixels with power lower or equal than this setting')
+        parser.add_argument('--overscan', default=cfg["overscan_default"], metavar="<default:" +str(cfg["overscan_default"])+ ">",
+            type=int, help="overscan image lines to avoid incorrect power levels for pixels at left and right borders, number in pixels, default off")
+        parser.add_argument('--showoverscan', action='store_true', default=False, help='show overscan pixels (note that this is visible and part of the gcode emitted!)' )
+        parser.add_argument('--constantburn', action=argparse.BooleanOptionalAction, default=cfg["constantburn_default"], help='default constant burn mode (M3)')
+        parser.add_argument('--origin', default=None, nargs=2, metavar=('delta-x', 'delta-y'),
+            type=float, help="translate origin by vector (delta-x,delta-y) in mm (default not set, option --selfcenter cannot be used at the same time)")
+        parser.add_argument('--scale', default=None, nargs=2, metavar=('factor-x', 'factor-y'),
+            type=float, help="scale svg with (factor-x,factor-y) (default not set)")
+        parser.add_argument('--rotate', default=cfg["rotate_default"], metavar="<default:" +str(cfg["rotate_default"])+ ">",
+            type=int, help="number of degrees to rotate")
+        parser.add_argument('--splitfile', action='store_true', default=False, help='split gcode output of SVG path and image objects' )
+        parser.add_argument('--pathcut', action='store_true', default=False, help='alway cut SVG path objects! (use laser power set with option --cuttingpower)' )
+        parser.add_argument('--nofill', action='store_true', default=False, help='ignore SVG fill attribute' )
+        parser.add_argument('--xmaxtravel', default=cfg["xmaxtravel_default"], metavar="<default:" +str(cfg["xmaxtravel_default"])+ ">",
+            type=int, help="machine x-axis lengh in mm")
+        parser.add_argument('--ymaxtravel', default=cfg["ymaxtravel_default"], metavar="<default:" +str(cfg["ymaxtravel_default"])+ ">",
+            type=int, help="machine y-axis lengh in mm")
+        parser.add_argument( '--color_coded', action = 'store', default=cfg["colorcoded_default"], metavar="<default:\"" + str(cfg["colorcoded_default"])+ "\">",
+            type = str, help = 'set action for path with specific stroke color "[color = [cut|engrave|ignore] *]*"'
+                                ', example: --color_coded "black = ignore purple = cut blue = engrave"' )
+        parser.add_argument('--fan', action='store_true', default=False, help='set machine fan on' )
+        parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + '3.3.6', help="show version number and exit")
+
+        # 使用临时文件作为输出路径
+        args = parser.parse_args([svg_filepath, gc_filepath, '--pixelsize','1','--origin','-50','-50'])
+
+        if args.color_coded != "":
+            if args.pathcut:
+                print("options --color_coded and --pathcut cannot be used at the same time, program abort")
+                return 1
+            # check argument validity (1)
+
+            # category names
+            category = ["cut", "engrave", "ignore"]
+            # get css color names
+            colors = str([*css_color.css_color_keywords])
+            colors = re.sub(r"(,|\[|\]|\'| )", '', colors.replace(",", "|"))
+
+            # make a color list
+            colors = colors.split("|")
+
+            # get all names from color_code
+            names_regex = "[a-zA-Z]+"
+            match = re.findall(names_regex, args.color_coded)
+            names = [i for i in match]
+
+            for name in names:
+                if not (name in colors or name in category):
+                    print(f"argument error: '--color_coded {args.color_coded}' has a name '{name}' that does not correspond to a css color or category (cut|engrave|ignore).")
+                    return 1
+
+        if args.origin is not None and args.selfcenter:
+            print("options --selfcenter and --origin cannot be used at the same time, program abort")
+            return 1
+
+        return svg2gcode(args)
+
+    def preview(self):
+        if self.general_gcode():
+            pass
+
+        
+        
+    def run(self):
+        pass

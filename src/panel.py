@@ -1,4 +1,6 @@
 import gi
+
+from simtoy.tools import engravtor
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk, GObject, Gio, Gdk
 
@@ -11,14 +13,12 @@ class Panel (Gtk.Paned):
     provider = Gtk.CssProvider.new()
 
     listview = Gtk.Template.Child('geoms')
-    expander_position = Gtk.Template.Child('position')
-    expander_pointcloud = Gtk.Template.Child('pointcloud')
-    expander_mesh = Gtk.Template.Child('mesh')
+    expander_device = Gtk.Template.Child('expander_device')
+    expander_text = Gtk.Template.Child('expander_text')
+    expander_bitmap = Gtk.Template.Child('expander_bitmap')
+    btn_connect = Gtk.Template.Child('btn_connect')
+    dp_com_port = Gtk.Template.Child('dp_com_port')
 
-    spin_x = Gtk.Template.Child('x')
-    spin_y = Gtk.Template.Child('y')
-    spin_z = Gtk.Template.Child('z')
-        
     menu_add = Gtk.Template.Child('popover_menu_add')
     menu = Gtk.Template.Child('popover_menu')
 
@@ -29,8 +29,8 @@ class Panel (Gtk.Paned):
         self.tree_model = Gtk.TreeListModel.new(self.model,passthrough=False,autoexpand=False,create_func=lambda item: item.model)
 
         self.selection_model = Gtk.SingleSelection.new(self.tree_model)
-        self.selection_model.set_autoselect(False)
-        self.selection_model.set_can_unselect(True)
+        self.selection_model.set_autoselect(True)
+        self.selection_model.set_can_unselect(False)
         self.cur_item_index = Gtk.INVALID_LIST_POSITION
         self.selected_item = None
 
@@ -54,33 +54,22 @@ class Panel (Gtk.Paned):
         self.listview.add_controller(right_click_gesture)
 
     def listview_left_clicked(self, gesture, n_press, x, y):
-        if self.selected_item:
-            self.selected_item.obj.set_bounding_box_visible(False)
+        model = self.listview.get_model()
+        i = model.get_selected()
+        listviewitem = model.get_item(i)
+        item = listviewitem.get_item()
 
-        if self.cur_item_index == Gtk.INVALID_LIST_POSITION:
-            self.selection_model.unselect_all()
-            self.selected_item = None
-            return
-        
-        item = self.selection_model.get_item(self.cur_item_index).get_item()
-        self.spin_x.set_value(item.obj.local.x)
-        self.spin_y.set_value(item.obj.local.y)
-        self.spin_z.set_value(item.obj.local.z)
+        self.expander_device.set_visible(False)
+        self.expander_text.set_visible(False)
+        self.expander_bitmap.set_visible(False)
 
-        if type(item.obj) == PointCloud:
-            self.expander_position.set_visible(True)
-            self.expander_pointcloud.set_visible(True)
-            self.expander_mesh.set_visible(False)
-            item.obj.set_bounding_box_visible(True)
-        elif type(item.obj) == Building:
-            self.expander_position.set_visible(True)
-            self.expander_pointcloud.set_visible(False)
-            self.expander_mesh.set_visible(True)
-            item.obj.set_bounding_box_visible(True)
+        if type(item.obj).__name__ == 'Engravtor':
+            self.expander_device.set_visible(True)
+        elif type(item.obj).__name__ == 'Text':
+            self.expander_text.set_visible(True)
+        elif type(item.obj).__name__ == 'Bitmap':
+            self.expander_bitmap.set_visible(True)
         else:
-            self.expander_position.set_visible(False)
-            self.expander_pointcloud.set_visible(False)
-            self.expander_mesh.set_visible(False)
             item = None
 
         self.selected_item = item
@@ -116,59 +105,40 @@ class Panel (Gtk.Paned):
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         
         name_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        expander = Gtk.TreeExpander()    
+        expander = Gtk.TreeExpander()
         name_box.append(expander)
 
-        label = Gtk.Label()
-        name_box.append(label)
-
         # 创建图标（使用默认的文件夹图标）
-        focus = Gtk.Button()
-        focus.set_icon_name("find-location-symbolic")
-        # focus.set_has_frame(False)
-        focus.connect("clicked", self.focus_clicked, listitem)
-        name_box.append(focus)
-
-        # 将图标和标签添加到容器中
-        box.append(name_box)
-
-        # 创建图标（使用默认的文件夹图标）
-        icon = Gtk.ToggleButton()
-        icon.set_icon_name("display-brightness-symbolic")
-        icon.set_active(True)
-        icon.set_has_frame(False)
+        icon = Gtk.Image.new_from_icon_name("printer")
+        # icon.set_active(True)
+        # icon.set_has_frame(False)
         css = """
             .borderless-toggle-button {
                 background: none;
             }
             """
-        self.provider.load_from_data(css)
-        icon.get_style_context().add_class("borderless-toggle-button")
-        icon.connect("toggled", self.item_visible_toggled, listitem)
-        box.append(icon)
+        # self.provider.load_from_data(css)
+        # icon.get_style_context().add_class("borderless-toggle-button")
+        # icon.connect("toggled", self.item_visible_toggled, listitem)
+        name_box.append(icon)
+
+        label = Gtk.Label()
+        name_box.append(label)
+
+        # 将图标和标签添加到容器中
+        box.append(name_box)
 
         # 设置列表项的显示内容
         listitem.set_child(box)
-
-        # 添加鼠标进入/离开控制器
-        motion_controller = Gtk.EventControllerMotion()
-        motion_controller.connect("enter", self.listitem_enter,listitem)  # 鼠标进入事件
-        motion_controller.connect("leave", self.listitem_leave)  # 鼠标离开事件
-        box.add_controller(motion_controller)
-
-
-    def listitem_enter(self, controller, x, y,listitem):
-        self.cur_item_index = listitem.get_position()
-
-    def listitem_leave(self, controller):
-        self.cur_item_index = Gtk.INVALID_LIST_POSITION
 
     def bind_listitem(self, factory, list_item):
         tree_row = list_item.get_item()
         box = list_item.get_child()
         name_box = box.get_first_child()
         expander = name_box.get_first_child()
-        label = expander.get_next_sibling()
+        icon = expander.get_next_sibling()
+        icon.set_visible(0 == tree_row.get_depth())
+        label = icon.get_next_sibling()
 
         item = tree_row.get_item()
         item.row = tree_row
@@ -182,29 +152,32 @@ class Panel (Gtk.Paned):
         else:
             expander.set_hide_expander(True)
 
-    def add(self, obj : WorldObject):
+    def add(self, obj : WorldObject, parent : WorldObject = None):
+        parent_item = None
+        model = self.model
+
+        for item in self.model:
+            if item.obj == parent:
+                parent_item = item
+                model = parent_item.model
+                break
+
+        start = 0
+        if parent_item:
+            start = parent_item.model.get_n_items()
+
         item = GObject.Object()
         item.obj = obj
-        item.parent = None
+        item.parent = parent_item
         item.model = Gio.ListStore(item_type=GObject.Object)
-        self.model.append(item)
-        obj.material.pick_write = True
+        model.append(item)
 
-        return item
-    
-    def add_sub(self,item,objs):
-        start = item.model.get_n_items()
-        for obj in objs:
-            obj.material.pick_write = True
-            sub_item = GObject.Object()
-            sub_item.obj = obj
-            sub_item.parent = item
-            sub_item.model = Gio.ListStore(item_type=GObject.Object)
-            item.model.append(sub_item)
-        
-        b,i = self.model.find(item)
-        self.model.items_changed(i,1,1)
-        item.model.items_changed(start,0,item.model.get_n_items() - start)
+        if parent_item:
+            expanded = parent_item.row.get_expanded()
+            b,i = self.model.find(parent_item)
+            self.model.items_changed(i,1,1)
+            parent_item.model.items_changed(start,0,parent_item.model.get_n_items() - start)
+            parent_item.row.set_expanded(expanded)
         
     def remove(self, obj):
         for i,item in enumerate(self.model):
@@ -240,27 +213,6 @@ class Panel (Gtk.Paned):
         camera = self.viewbar.get_view_camera()
         camera.show_object(item.obj)
 
-    # @Gtk.Template.Callback()
-    def x_value_changed(self, spin_button):
-        value = spin_button.get_value()
-        i = self.selection_model.get_selected()
-        item = self.selection_model.get_item(i).get_item()
-        item.obj.local.x = value
-
-    # @Gtk.Template.Callback()
-    def y_value_changed(self, spin_button):
-        value = spin_button.get_value()
-        i = self.selection_model.get_selected()
-        item = self.selection_model.get_item(i).get_item()
-        item.obj.local.y = value
-
-    # @Gtk.Template.Callback()
-    def z_value_changed(self, spin_button):
-        value = spin_button.get_value()
-        i = self.selection_model.get_selected()
-        item = self.selection_model.get_item(i).get_item()
-        item.obj.local.z = value
-
     @Gtk.Template.Callback()
     def point_size_value_changed(self,spin_button):
         value = spin_button.get_value()
@@ -278,3 +230,29 @@ class Panel (Gtk.Paned):
         item = self.selection_model.get_item(i).get_item()
         color = self.roomcolor.get_color()
         item.obj.material.color = (color.red, color.green, color.blue)
+
+    @Gtk.Template.Callback()
+    def btn_connect_toggled(self,sender,*args):
+        if sender.get_active():
+            sender.set_label('关闭')
+        else:
+            sender.set_label('连接')
+
+    @Gtk.Template.Callback()
+    def btn_preview_clicked(self,sender,*args):
+        model = self.listview.get_model()
+        i = model.get_selected()
+        listviewitem = model.get_item(i)
+        item = listviewitem.get_item()
+        engravtor = item.obj
+        engravtor.preview()
+
+
+    @Gtk.Template.Callback()
+    def btn_run_clicked(self,sender,*args):
+        model = self.listview.get_model()
+        i = model.get_selected()
+        listviewitem = model.get_item(i)
+        item = listviewitem.get_item()
+        engravtor = item.obj
+        engravtor.run()
