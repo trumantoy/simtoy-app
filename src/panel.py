@@ -14,6 +14,9 @@ class Panel (Gtk.Paned):
 
     listview = Gtk.Template.Child('geoms')
     expander_device = Gtk.Template.Child('expander_device')
+    expander_gcode = Gtk.Template.Child('expander_gcode')
+    textview_gcode = Gtk.Template.Child('textview_gcode')
+
     expander_text = Gtk.Template.Child('expander_text')
     expander_bitmap = Gtk.Template.Child('expander_bitmap')
     btn_connect = Gtk.Template.Child('btn_connect')
@@ -32,20 +35,21 @@ class Panel (Gtk.Paned):
         self.selection_model.set_autoselect(True)
         self.selection_model.set_can_unselect(False)
         self.cur_item_index = Gtk.INVALID_LIST_POSITION
-        self.selected_item = None
-
+        
         factory = Gtk.SignalListItemFactory()
         factory.connect("setup", self.setup_listitem)
         factory.connect("bind", self.bind_listitem)
                 
         self.listview.set_model(self.selection_model)
         self.listview.set_factory(factory)
+
+        self.selection_model.connect('selection-changed', self.listview_selection_changed)
         
-        # 创建右键点击手势
-        left_click_gesture = Gtk.GestureClick()
-        left_click_gesture.set_button(1)  # 3 代表鼠标右键
-        left_click_gesture.connect("pressed", self.listview_left_clicked)
-        self.listview.add_controller(left_click_gesture)
+        # # 创建右键点击手势
+        # left_click_gesture = Gtk.GestureClick()
+        # left_click_gesture.set_button(1)  # 3 代表鼠标右键
+        # left_click_gesture.connect("pressed", self.listview_left_clicked)
+        # self.listview.add_controller(left_click_gesture)
 
         # 创建右键点击手势
         right_click_gesture = Gtk.GestureClick()
@@ -53,26 +57,15 @@ class Panel (Gtk.Paned):
         right_click_gesture.connect("pressed", self.listview_right_clicked)
         self.listview.add_controller(right_click_gesture)
 
-    def listview_left_clicked(self, gesture, n_press, x, y):
-        model = self.listview.get_model()
+    def listview_selection_changed(self, model, *args):
         i = model.get_selected()
         listviewitem = model.get_item(i)
         item = listviewitem.get_item()
 
-        self.expander_device.set_visible(False)
-        self.expander_text.set_visible(False)
-        self.expander_bitmap.set_visible(False)
-
-        if type(item.obj).__name__ == 'Engravtor':
-            self.expander_device.set_visible(True)
-        elif type(item.obj).__name__ == 'Text':
-            self.expander_text.set_visible(True)
-        elif type(item.obj).__name__ == 'Bitmap':
-            self.expander_bitmap.set_visible(True)
-        else:
-            item = None
-
-        self.selected_item = item
+        self.expander_device.set_visible(item.obj.__class__.__name__ == 'Engravtor')
+        self.expander_gcode.set_visible(item.obj.__class__.__name__ == 'Engravtor')
+        self.expander_text.set_visible(item.obj.__class__.__name__ == 'Text')
+        self.expander_bitmap.set_visible(item.obj.__class__.__name__ == 'Bitmap')
 
     def listview_right_clicked(self, gesture, n_press, x, y):
         popover = Gtk.PopoverMenu()
@@ -239,14 +232,37 @@ class Panel (Gtk.Paned):
             sender.set_label('连接')
 
     @Gtk.Template.Callback()
+    def btn_gcode_clicked(self,sender,*args):
+        model = self.listview.get_model()
+        i = model.get_selected()
+        listviewitem = model.get_item(i)
+        item = listviewitem.get_item()
+        engravtor = item.obj
+
+        import tempfile
+        temp_file = tempfile.NamedTemporaryFile(delete=False); temp_file.close()
+        svg_filepath = temp_file.name + '.svg'
+        gc_filepath = temp_file.name + '.gc'
+        
+        width,heigh = engravtor.export_svg(svg_filepath)
+        if self.export_gcode_from_svg(svg_filepath,gc_filepath,width,heigh):
+            return
+
+        with open(gc_filepath,'r') as f:
+            gcode = f.read()
+            self.textview_gcode.get_buffer().set_text(gcode)
+
+        engravtor.preview(gcode)
+
+    @Gtk.Template.Callback()
     def btn_preview_clicked(self,sender,*args):
         model = self.listview.get_model()
         i = model.get_selected()
         listviewitem = model.get_item(i)
         item = listviewitem.get_item()
         engravtor = item.obj
-        engravtor.preview()
 
+        # engravtor.preview(gcode)
 
     @Gtk.Template.Callback()
     def btn_run_clicked(self,sender,*args):
@@ -255,4 +271,96 @@ class Panel (Gtk.Paned):
         listviewitem = model.get_item(i)
         item = listviewitem.get_item()
         engravtor = item.obj
-        engravtor.run()
+
+
+        # engravtor.run()
+
+    def export_gcode_from_svg(self,svg_filepath,gc_filepath,width,height):
+        from svg2gcode.__main__ import svg2gcode
+        import argparse
+
+        # defaults
+        cfg = {
+            "pixelsize_default": 0.1,
+            "imagespeed_default": 800,
+            "cuttingspeed_default": 1000,
+            "imagepower_default": 300,
+            "poweroffset_default": 0,
+            "cuttingpower_default": 850,
+            "xmaxtravel_default": 300,
+            "ymaxtravel_default": 400,
+            "rapidmove_default": 10,
+            "noise_default": 0,
+            "overscan_default": 0,
+            "pass_depth_default": 0,
+            "passes_default": 1,
+            "rotate_default": 0,
+            "colorcoded_default": "",
+            "constantburn_default": True,
+        }
+
+        # Define command line argument interface
+        parser = argparse.ArgumentParser(description='Convert svg to gcode for GRBL v1.1 compatible diode laser engravers.')
+        parser.add_argument('svg', type=str, help='svg file to be converted to gcode')
+        parser.add_argument('gcode', type=str, help='gcode output file')
+        parser.add_argument('--showimage', action='store_true', default=False, help='show b&w converted image' )
+        parser.add_argument('--selfcenter', action='store_true', default=False, help='self center the gcode (--origin cannot be used at the same time)' )
+        parser.add_argument('--pixelsize', default=cfg["pixelsize_default"], metavar="<default:" + str(cfg["pixelsize_default"])+">",type=float, help="pixel size in mm (XY-axis): each image pixel is drawn this size")
+        parser.add_argument('--imagespeed', default=cfg["imagespeed_default"], metavar="<default:" + str(cfg["imagespeed_default"])+">",type=int, help='image draw speed in mm/min')
+        parser.add_argument('--cuttingspeed', default=cfg["cuttingspeed_default"], metavar="<default:" + str(cfg["cuttingspeed_default"])+">",type=int, help='cutting speed in mm/min')
+        parser.add_argument('--imagepower', default=cfg["imagepower_default"], metavar="<default:" +str(cfg["imagepower_default"])+ ">",type=int, help="maximum laser power while drawing an image (as a rule of thumb set to 1/3 of the machine maximum for a 5W laser)")
+        parser.add_argument('--poweroffset', default=cfg["poweroffset_default"], metavar="<default:" +str(cfg["poweroffset_default"])+ ">",type=int, help="pixel intensity to laser power: shift power range [0-imagepower]")
+        parser.add_argument('--cuttingpower', default=cfg["cuttingpower_default"], metavar="<default:" +str(cfg["cuttingpower_default"])+ ">",type=int, help="sets laser power of line (path) cutting")
+        parser.add_argument('--passes', default=cfg["passes_default"], metavar="<default:" +str(cfg["passes_default"])+ ">",type=int, help="Number of passes (iterations) for line drawings, only active when pass_depth is set")
+        parser.add_argument('--pass_depth', default=cfg["pass_depth_default"], metavar="<default:" + str(cfg["pass_depth_default"])+">",type=float, help="cutting depth in mm for one pass, only active for passes > 1")
+        parser.add_argument('--rapidmove', default=cfg["rapidmove_default"], metavar="<default:" + str(cfg["rapidmove_default"])+ ">",type=int, help='generate G0 moves between shapes, for images: G0 moves when skipping more than 10mm (default), 0 is no G0 moves' )
+        parser.add_argument('--noise', default=cfg["noise_default"], metavar="<default:" +str(cfg["noise_default"])+ ">",type=int, help='reduces image noise by not emitting pixels with power lower or equal than this setting')
+        parser.add_argument('--overscan', default=cfg["overscan_default"], metavar="<default:" +str(cfg["overscan_default"])+ ">",type=int, help="overscan image lines to avoid incorrect power levels for pixels at left and right borders, number in pixels, default off")
+        parser.add_argument('--showoverscan', action='store_true', default=False, help='show overscan pixels (note that this is visible and part of the gcode emitted!)' )
+        parser.add_argument('--constantburn', action=argparse.BooleanOptionalAction, default=cfg["constantburn_default"], help='default constant burn mode (M3)')
+        parser.add_argument('--origin', default=None, nargs=2, metavar=('delta-x', 'delta-y'),type=float, help="translate origin by vector (delta-x,delta-y) in mm (default not set, option --selfcenter cannot be used at the same time)")
+        parser.add_argument('--scale', default=None, nargs=2, metavar=('factor-x', 'factor-y'),type=float, help="scale svg with (factor-x,factor-y) (default not set)")
+        parser.add_argument('--rotate', default=cfg["rotate_default"], metavar="<default:" +str(cfg["rotate_default"])+ ">",type=int, help="number of degrees to rotate")
+        parser.add_argument('--splitfile', action='store_true', default=False, help='split gcode output of SVG path and image objects' )
+        parser.add_argument('--pathcut', action='store_true', default=False, help='alway cut SVG path objects! (use laser power set with option --cuttingpower)' )
+        parser.add_argument('--nofill', action='store_true', default=False, help='ignore SVG fill attribute' )
+        parser.add_argument('--xmaxtravel', default=cfg["xmaxtravel_default"], metavar="<default:" +str(cfg["xmaxtravel_default"])+ ">",type=int, help="machine x-axis lengh in mm")
+        parser.add_argument('--ymaxtravel', default=cfg["ymaxtravel_default"], metavar="<default:" +str(cfg["ymaxtravel_default"])+ ">",type=int, help="machine y-axis lengh in mm")
+        parser.add_argument( '--color_coded', action = 'store', default=cfg["colorcoded_default"], metavar="<default:\"" + str(cfg["colorcoded_default"])+ "\">",type = str, help = 'set action for path with specific stroke color "[color = [cut|engrave|ignore] *]*"'', example: --color_coded "black = ignore purple = cut blue = engrave"' )
+        parser.add_argument('--fan', action='store_true', default=False, help='set machine fan on' )
+        parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + '3.3.6', help="show version number and exit")
+
+        # 使用临时文件作为输出路径
+        args = parser.parse_args([svg_filepath, gc_filepath, '--pixelsize','1','--origin',str(-width/2),str(-height/2)])
+
+
+        if args.color_coded != "":
+            if args.pathcut:
+                print("options --color_coded and --pathcut cannot be used at the same time, program abort")
+                return 1
+            # check argument validity (1)
+
+            # category names
+            category = ["cut", "engrave", "ignore"]
+            # get css color names
+            colors = str([*css_color.css_color_keywords])
+            colors = re.sub(r"(,|\[|\]|\'| )", '', colors.replace(",", "|"))
+
+            # make a color list
+            colors = colors.split("|")
+
+            # get all names from color_code
+            names_regex = "[a-zA-Z]+"
+            match = re.findall(names_regex, args.color_coded)
+            names = [i for i in match]
+
+            for name in names:
+                if not (name in colors or name in category):
+                    print(f"argument error: '--color_coded {args.color_coded}' has a name '{name}' that does not correspond to a css color or category (cut|engrave|ignore).")
+                    return 1
+
+        if args.origin is not None and args.selfcenter:
+            print("options --selfcenter and --origin cannot be used at the same time, program abort")
+            return 1
+
+        return svg2gcode(args)

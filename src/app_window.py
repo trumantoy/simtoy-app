@@ -25,6 +25,7 @@ from bar import *
 class AppWindow (Gtk.ApplicationWindow):
     __gtype_name__ = "AppWindow"
 
+    paned : Gtk.Paned = Gtk.Template.Child('paned')
     stack : Gtk.Stack = Gtk.Template.Child('panel')
     area : Gtk.DrawingArea = Gtk.Template.Child('widget')
     actionbar : Actionbar = Gtk.Template.Child('actionbar')
@@ -96,7 +97,16 @@ class AppWindow (Gtk.ApplicationWindow):
         self.panel.add(self.tool)
         self.hotbar.set_items(self.tool.get_hot_items())
         self.hotbar.connect('item_added',lambda sender,obj: self.panel.add(obj,self.tool))
-        
+
+    def do_size_allocate(self, width: int, height: int, baseline: int):
+        if hasattr(self,'prev_width'): 
+            panel = self.stack.get_visible_child()
+            prev_panel_width = self.prev_width - self.paned.get_position()
+            self.paned.set_position(width - prev_panel_width)
+
+        self.prev_width = width
+        Gtk.ApplicationWindow.do_size_allocate(self,width,height,baseline)
+
     def pick(self,x,y):
         info = self.renderer.get_pick_info([x,y])
 
@@ -118,6 +128,8 @@ class AppWindow (Gtk.ApplicationWindow):
         # else:
         #     self.panel.selection_model.unselect_all()
         # self.panel.selected_item = item
+
+    
 
     def draw(self,area, cr : cairo.Context, area_w, area_h):
         self.editor.step()

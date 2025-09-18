@@ -21,7 +21,6 @@
   </menu>
 
   <template class="AppWindow" parent="GtkApplicationWindow">
-
     <child type="titlebar">
       <object class="GtkHeaderBar" id="header">
         <property name="show-title-buttons">yes</property>
@@ -69,59 +68,61 @@
     
     <!-- 主视图，显示覆盖层 -->
     <child>
-      <object class="GtkBox" id="content">
-        <!-- <property name="transition-type">crossfade</property> -->
+      <object class="GtkPaned" id="paned">
+        <property name="orientation">horizontal</property>
+        <property name="resize-start-child">True</property>
+        <property name="resize-end-child">True</property>
+        <property name="shrink-start-child">False</property>
+        <property name="shrink-end-child">False</property>
+
         <child>
-          <object class="GtkOverlay" id="scene_view">
-              <style>
-                <class name="view-full-color"></class>
-              </style>
+          <object class="GtkOverlay" id="scene_view">          
+            <style><class name="view-full-color"></class></style>
+            <property name="hexpand">True</property>
 
-              <!-- 绘图层 -->
-              <child>
-                <object class="GtkDrawingArea" id="widget">
-                  <property name="hexpand">True</property>
-                </object>
-              </child>
+            <!-- 绘图层 -->
+            <child>
+              <object class="GtkDrawingArea" id="widget">
+                <property name="width-request">724</property>
+              </object>
+            </child>
 
-              <!-- 工具栏 -->
-              <child type="overlay">
-                <object class="Hotbar" id="hotbar">
-                  <property name="halign">start</property>
-                  <property name="valign">start</property>
-                  <property name="visible">True</property>
-                  <property name="opacity">0.8</property>
-                </object>
-              </child>
+            <!-- 工具栏 -->
+            <child type="overlay">
+              <object class="Hotbar" id="hotbar">
+                <property name="halign">start</property>
+                <property name="valign">start</property>
+                <property name="visible">True</property>
+                <property name="opacity">0.8</property>
+              </object>
+            </child>
 
-              <!-- 视图栏 -->
-              <child type="overlay">
-                <object class="Viewbar" id="viewbar">
-                  <property name="halign">end</property>
-                  <property name="valign">start</property>
-                  <property name="visible">False</property>
-                  <property name="opacity">0.8</property>
-                </object>
-              </child>
+            <!-- 视图栏 -->
+            <child type="overlay">
+              <object class="Viewbar" id="viewbar">
+                <property name="halign">end</property>
+                <property name="valign">start</property>
+                <property name="visible">False</property>
+                <property name="opacity">0.8</property>
+              </object>
+            </child>
 
-              
-              <!-- 操作栏 -->
-              <child type="overlay">
-                <object class="Actionbar" id="actionbar">
-                  <property name="halign">start</property>
-                  <property name="valign">start</property>
-                  <property name="visible">False</property>
-                  <property name="opacity">0.8</property>
-                </object>
-              </child>
+            
+            <!-- 操作栏 -->
+            <child type="overlay">
+              <object class="Actionbar" id="actionbar">
+                <property name="halign">start</property>
+                <property name="valign">start</property>
+                <property name="visible">False</property>
+                <property name="opacity">0.8</property>
+              </object>
+            </child>
           </object>
         </child>
             
         <!-- 右侧属性栏 -->
         <child>
           <object class="GtkStack" id='panel'>
-            <property name="width-request">300</property>
-            <property name="halign">end</property>
             <property name="visible">True</property>
             <property name="opacity">1</property>
 
@@ -129,7 +130,9 @@
               <object class="GtkStackPage">
                 <property name="name">panel</property>
                 <property name="child">
-                  <object class="Panel"></object>
+                  <object class="Panel">
+                    <property name="width-request">300</property>
+                  </object>
                 </property>
 
               </object>

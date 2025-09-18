@@ -116,14 +116,26 @@
                                                 </child>
 
                                                 <child>
-                                                    <object class="GtkToggleButton" id="btn_connect">
-                                                        <property name="label">连接</property>
-                                                        <signal name="toggled" handler="btn_connect_toggled" swapped="no"/>
+                                                    <object class="GtkBox" >
+                                                        <property name="homogeneous">True</property>
+                                                        <property name="spacing">10</property>
+                                                        <child>
+                                                            <object class="GtkToggleButton" id="btn_connect">
+                                                                <property name="label">连接</property>
+                                                                <signal name="toggled" handler="btn_connect_toggled" swapped="no"/>
+                                                            </object>
+                                                        </child>
+
+                                                                                
+                                                        <child>
+                                                            <object class="GtkButton">
+                                                                <property name="label">雕刻</property>
+                                                                <signal name="clicked" handler="btn_run_clicked" swapped="no"/>
+                                                            </object>
+                                                        </child>
+                                                        
                                                     </object>
                                                 </child>
-                                                
-
-
                                                 
                                             </object>
 
@@ -231,6 +243,33 @@
                                     </object>
                                 </child>
 
+                                <child>
+                                    <object class="GtkExpander" id="expander_gcode">
+                                        <property name="expanded">True</property>
+                                        <property name="visible">True</property>
+                                        <property name="label">GCode</property>
+                                        <child>
+                                            <object class="GtkBox">
+                                                <style><class name="rich-list"></class></style>
+                                                <property name="margin-top">10</property>
+                                                <property name="orientation">vertical</property>
+
+                                                <child>
+                                                    <object class="GtkScrolledWindow">
+                                                        <child>
+                                                            <object class="GtkTextView" id='textview_gcode'>
+                                                                <property name="vexpand">True</property>
+                                                            </object>
+                                                        </child>
+                                                    </object>
+                                                </child>
+
+                                            </object>
+                                        </child>
+
+                                    </object>
+                                </child>
+
 
                             </object>
                         </child>
@@ -246,14 +285,15 @@
 
                         <child>
                             <object class="GtkButton">
-                                <property name="label">预览</property>
-                                <signal name="clicked" handler="btn_preview_clicked" swapped="no"/>
+                                <property name="label">生成GCode</property>
+                                <signal name="clicked" handler="btn_gcode_clicked" swapped="no"/>
                             </object>
                         </child>
+                        
                         <child>
                             <object class="GtkButton">
-                                <property name="label">雕刻</property>
-                                <signal name="clicked" handler="btn_run_clicked" swapped="no"/>
+                                <property name="label">预览</property>
+                                <signal name="clicked" handler="btn_preview_clicked" swapped="no"/>
                             </object>
                         </child>
                     </object>
