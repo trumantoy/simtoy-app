@@ -1,4 +1,4 @@
-src/simtoy/data/stocraft/*
+src/simtoy/data/stocraft/db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
