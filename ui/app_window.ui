@@ -83,7 +83,7 @@
             <!-- 绘图层 -->
             <child>
               <object class="GtkDrawingArea" id="widget">
-                <property name="width-request">724</property>
+                <property name="width-request">700</property>
               </object>
             </child>
 
@@ -130,9 +130,7 @@
               <object class="GtkStackPage">
                 <property name="name">panel</property>
                 <property name="child">
-                  <object class="Panel">
-                    <property name="width-request">300</property>
-                  </object>
+                  <object class="Panel"></object>
                 </property>
 
               </object>

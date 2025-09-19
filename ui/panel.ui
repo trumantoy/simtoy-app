@@ -264,8 +264,35 @@
                                                     </object>
                                                 </child>
 
+                                                <child>
+                                                    <object class="GtkBox" id="box_run">
+                                                        <property name="homogeneous">True</property>
+                                                        <property name="spacing">10</property>
+                                                        <property name="margin-top">10</property>
+                                                        <property name="margin-start">10</property>
+                                                        <property name="margin-end">10</property>
+
+
+                                                        <child>
+                                                            <object class="GtkButton">
+                                                                <property name="label">生成GCode</property>
+                                                                <signal name="clicked" handler="btn_gcode_clicked" swapped="no"/>
+                                                            </object>
+                                                        </child>
+                                                        
+                                                        <child>
+                                                            <object class="GtkButton">
+                                                                <property name="label">预览</property>
+                                                                <signal name="clicked" handler="btn_preview_clicked" swapped="no"/>
+                                                            </object>
+                                                        </child>
+                                                    </object>
+                                                </child>
+
                                             </object>
                                         </child>
+
+                                        
 
                                     </object>
                                 </child>
@@ -276,28 +303,7 @@
                     </object>
                 </child>
 
-                <child>
-                    <object class="GtkBox" id="box_run">
-                        <property name="homogeneous">True</property>
-                        <property name="spacing">10</property>
-                        <property name="margin-bottom">10</property>
-
-
-                        <child>
-                            <object class="GtkButton">
-                                <property name="label">生成GCode</property>
-                                <signal name="clicked" handler="btn_gcode_clicked" swapped="no"/>
-                            </object>
-                        </child>
-                        
-                        <child>
-                            <object class="GtkButton">
-                                <property name="label">预览</property>
-                                <signal name="clicked" handler="btn_preview_clicked" swapped="no"/>
-                            </object>
-                        </child>
-                    </object>
-                </child>
+                
             </object>
         </child>
 
