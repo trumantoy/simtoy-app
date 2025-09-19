@@ -331,8 +331,7 @@ class Panel (Gtk.Paned):
         parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + '3.3.6', help="show version number and exit")
 
         # 使用临时文件作为输出路径
-        print(width,height)
-        args = parser.parse_args([svg_filepath, gc_filepath, '--pixelsize','1','--origin',str(0),str(0)])
+        args = parser.parse_args([svg_filepath, gc_filepath, '--pixelsize','1','--origin',str(-width/2),str(-height/2)])
 
 
         if args.color_coded != "":

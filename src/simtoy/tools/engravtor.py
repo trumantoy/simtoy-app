@@ -754,9 +754,9 @@ class Engravtor(gfx.WorldObject):
         self.init_params()
 
     def init_params(self):
-        self.y_lim = self.x_lim = (0,0.110)
+        self.y_lim = self.x_lim = (0,0.100)
         self.light_spot_size = 0.0000075
-        self.pixels_per_m = 1000000
+        self.pixelsize = 1
         
     def step(self,dt):
         # self.persp_camera.world.z = self.target_area.world.z
@@ -766,7 +766,7 @@ class Engravtor(gfx.WorldObject):
         return self.camera.local.position,self.target_area.local.position
 
     def get_consumables(self):
-        return ['木板-90x90x1','木板-90x90x10']
+        return ['木板-100x100x1','木板-100x100x10']
 
     def set_consumable(self,name):
         target : gfx.WorldObject = next(self.scene.iter(lambda o: o.name == name))
@@ -796,7 +796,7 @@ class Engravtor(gfx.WorldObject):
             aabb = target.get_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
-            element = Label('中国制造',0.01,'KaiTi',name='文本')
+            element = Label('大',0.01,'KaiTi',name='文本')
             element_height_offset = target_height / 2 
             element.local.z += element_height_offset
             element._camera = self.persp_camera
@@ -830,7 +830,7 @@ class Engravtor(gfx.WorldObject):
 
         with cairo.SVGSurface(file_name, width, height) as surface:
             cr = cairo.Context(surface)
-            cr.translate(width/2, height/2)
+            cr.translate(width / 2, height / 2)
 
             for obj in self.target_area.children[0].children:
                 if type(obj) == Label:
@@ -839,11 +839,22 @@ class Engravtor(gfx.WorldObject):
                     cr.set_line_width(self.light_spot_size * 100000)
                     cr.set_font_size(obj.font_size * 1000)
                     cr.select_font_face(obj.family)
-                    ascent, descent, height, max_x_advance, max_y_advance = cr.font_extents()
+                    ascent, descent, font_height, max_x_advance, max_y_advance = cr.font_extents()
                     text_extents = cr.text_extents(obj.text)
-                    cr.move_to(obj.local.x * 1000 - text_extents.width / 2, -obj.local.y * 1000 + (text_extents.height / 2) - descent)
+
+                    xoffset = 0.29
+                    yoffset = 0.11
+                    cr.move_to(obj.local.x * 1000 - text_extents.width / 2 + xoffset, 
+                                -(obj.local.y * 1000 + descent - text_extents.height / 2 + yoffset))
                     cr.text_path(obj.text)
                     cr.stroke()
+                    
+                    cr.rectangle(obj.local.x * 1000 - text_extents.width / 2 + xoffset, 
+                                -(obj.local.y * 1000 + text_extents.height / 2 + yoffset),
+                                text_extents.width,text_extents.height)
+
+                    cr.stroke()
+
                 elif type(obj) == Bitmap:
                     pass
                 else:

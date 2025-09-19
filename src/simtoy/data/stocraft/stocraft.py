@@ -15,7 +15,8 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer,encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer,encoding='utf-8')
 sys.stdin = io.TextIOWrapper(sys.stdin.buffer,encoding='utf-8')
-
+    
+import threading
 import multiprocessing as mp
 from multiprocessing.managers import ValueProxy,ListProxy,DictProxy
 
@@ -137,44 +138,6 @@ def sync(args : DictProxy=dict(),records : DictProxy=dict()):
     args['status'] = '数据采集完成'
     return 60 * 60
 
-def worker(id,args,records):
-    while True:
-        time.sleep(1)
-        worker_count = args['worker_count']
-
-        if not records: continue
-
-        h9 = datetime.now().replace(hour=9, minute=15, second=0)
-        while datetime.now() < h9:
-            continue
-
-        h15 = datetime.now().replace(hour=15, minute=0, second=0)
-        while datetime.now() < h15 and len(records):
-            time_updated = records['更新时间']
-
-            codes = args['codes']
-            for i,code in enumerate(codes):
-                if i % worker_count != id: continue
-
-                deals = ak.stock_intraday_em(symbol=code)
-                # deals
-                print('deals',deals,flush=True)
-                
-                i = args['indexes'][code]
-                time_updated[i] =  datetime.now().strftime('%H:%M:%S')
-
-            records['更新时间'] = time_updated
-        
-        for i,code in enumerate(records['代码']):
-            if i % worker_count != id: continue
-
-            feature_filepath = os.path.join(db_dir,f'{code}-0-特征.csv')
-            if os.path.exists(feature_filepath) and datetime.now().date() == datetime.fromtimestamp(os.path.getmtime(feature_filepath)).date():
-                continue
-            
-            特征 = feature(code)
-            特征.to_csv(os.path.join(db_dir,f'{code}-0-特征.csv'))
-
 def feature(code,days=7):
     date_end = datetime.now().date()
     date_start = datetime.now().date() - timedelta(days=days)
@@ -256,38 +219,36 @@ def up(args,records,up_records : dict):
             up_records.update(df_up_records.to_dict(orient='list'))
     return 60*60
 
-def player(args,records,up_records : dict):
-    args['status'] = '空闲'
-    mode = args['mode']
+
+def worker(id,req : Queue,res : Queue):
     while True:
-        if mode == 'sync':
-            elapsed = sync(args,records)
-        elif mode == 'up':
-            elapsed = up(args,records,up_records)
-        else:
-            elapsed = 5
-        time.sleep(elapsed)
+
+        pass
+
+def player(req : Queue,res : Queue):
+    while True:
+        h9 = datetime.now().replace(hour=9, minute=15, second=0)
+        h11 = datetime.now().replace(hour=11, minute=30, second=0)
+        h13 = datetime.now().replace(hour=13, minute=0, second=0)
+        h15 = datetime.now().replace(hour=15, minute=0, second=0)
+
+        if datetime.now() < h9:
+            continue
+
+        if datetime.now() < h15:
+            continue
 
 if __name__ == '__main__':
-    shared = mp.Manager()
-    params = shared.dict()
-    records = shared.dict()
-    up_records = shared.dict()
-
-    params['mode'] = 'sync'
-    params['args'] = '' 
-    params['status'] = '' 
-    params['worker_count'] = mp.cpu_count() 
-    process = mp.Process(target=player,name='机器人-数据收集',args=(params,records,up_records),daemon=True)
-    process.start()
-    db_player = (process,params,records)
-    # process = mp.Process(target=player,name='机器人-钓鱼策略',args=(params,records,up_records),daemon=True)
-    # process.start() 
-    up_player = (process,params,records)
+    req = shared.Queue()
+    res = shared.Queue()
 
     for i in range(mp.cpu_count()):
-        process = mp.Process(target=worker,name=f'牛马-{i}',args=(i,params,records),daemon=True)
+        shared = mp.Manager()
+        
+        process = mp.Process(target=worker,name=f'牛马-{i}',args=[req,res],daemon=True)
         process.start()
+
+    threading.Thread(target=player,name='玩家',args=[req,res],daemon=True).start()
 
     while True:
         if len(sys.argv) > 1:
@@ -321,7 +282,6 @@ if __name__ == '__main__':
             if df.shape[0]: print(df.sort_values('评分').tail(10).to_string())
             print('-')
         elif args.mode == 'play':
-            
             print('-')
             pass
         else:

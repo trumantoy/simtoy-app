@@ -86,7 +86,7 @@ class AppWindow (Gtk.ApplicationWindow):
         self.editor.add(self.light)
 
         self.tool = Engravtor(name='M3-00-355紫外打标机')
-        self.tool.set_consumable('木板-90x90x1')
+        self.tool.set_consumable('木板-100x100x1')
         self.editor.add(self.tool)
         
         self.camera_controller = gfx.OrbitController()
