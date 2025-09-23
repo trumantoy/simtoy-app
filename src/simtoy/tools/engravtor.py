@@ -709,7 +709,7 @@ class Label(TranformHelper):
         self.family = family
 
         obj = gfx.Text(material=gfx.TextMaterial(pick_write=True),
-                        text=text,font_size=font_size,family=family)
+                        text=text,font_size=font_size,family=family,render_order=1000)
         self.add(obj)
 
 
@@ -724,6 +724,9 @@ class Bitmap(TranformHelper):
 class Engravtor(gfx.WorldObject):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
+        self.steps = list()
+        self.init_params()
+
         path = files("simtoy.data.engravtor") / "engravtor.gltf"
         self.scene : gfx.Scene = gfx.load_gltf(path).scene
         self.scene.traverse(lambda o: setattr(o,'cast_shadow',True) or setattr(o,'receive_shadow',True),True)
@@ -732,6 +735,7 @@ class Engravtor(gfx.WorldObject):
         self.add(tool)
 
         self.target_area : gfx.WorldObject = next(tool.iter(lambda o: o.name == '工作区-内'))
+        self.laser_aperture : gfx.WorldObject = next(tool.iter(lambda o: o.name == '激光'))
 
         camera : gfx.PerspectiveCamera = next(tool.iter(lambda o: o.name == '摄像头'))
         camera.show_pos(self.target_area.world.position,up=[0,0,1])
@@ -750,17 +754,25 @@ class Engravtor(gfx.WorldObject):
 
         # self.controller = GrblController()
         # self.controller.connect()
+        
+        geom = gfx.sphere_geometry(radius=0.0001)
+        material = gfx.MeshBasicMaterial(color=(1, 0, 0, 1),flat_shading=True)
+        self.focus = gfx.Mesh(geom,material)
+        self.target_area.add(self.focus)
 
-        self.init_params()
+    def step(self,dt):
+        if self.steps:
+            self.steps[0]()
+            self.steps.pop(0)
+
+        aabb = self.target.get_geometry_bounding_box()
+        self.focus.local.z = aabb[1][2] - aabb[0][2]
 
     def init_params(self):
         self.y_lim = self.x_lim = (0,0.100)
         self.light_spot_size = 0.0000075
         self.pixelsize = 1
-        
-    def step(self,dt):
-        # self.persp_camera.world.z = self.target_area.world.z
-        pass    
+        self.paths = list()
 
     def get_view_focus(self):
         return self.camera.local.position,self.target_area.local.position
@@ -774,39 +786,38 @@ class Engravtor(gfx.WorldObject):
         target.cast_shadow = True
         target.receive_shadow=True
         target.local.position = self.target_area.local.position
-        aabb = target.get_bounding_box()
+        aabb = target.get_geometry_bounding_box()
         target_height = (aabb[1][2] - aabb[0][2])
-        target_height_offset = target_height / 2
-        target.local.z += target_height_offset
+        target.local.z = target_height / 2
+        self.target = target
         self.target_area.add(target)
     
         target.add_event_handler(lambda e: e.button == 3 and self.unselect_all(target),'pointer_down')
+ 
 
     def unselect_all(self,parent : gfx.WorldObject):
         for obj in parent.children:
-            obj : TranformHelper
-            obj.set_tranform_visible(False)
+            if type(obj).__mro__ == TranformHelper:
+                obj : TranformHelper
+                obj.set_tranform_visible(False)
 
     def get_viewport(self):
         return [self.persp_camera]
 
     def get_hot_items(self):
         def label():
-            target = self.target_area.children[0]
-            aabb = target.get_bounding_box()
+            aabb = self.target.get_geometry_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
             element = Label('大',0.01,'KaiTi',name='文本')
-            element_height_offset = target_height / 2 
-            element.local.z += element_height_offset
+            element.local.z = target_height + 0.00001
             element._camera = self.persp_camera
             element.set_tranform_visible(False)
-            target.add(element)
+            self.target_area.add(element)
             return element 
-            # element.add_event_handler(lambda e: e.button == 3 and self.unselect_all(target),'pointer_down')
 
         def bitmap():
-            target = self.target_area.children[0]
+            target = self.target
             aabb = target.get_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
@@ -832,7 +843,7 @@ class Engravtor(gfx.WorldObject):
             cr = cairo.Context(surface)
             cr.translate(width / 2, height / 2)
 
-            for obj in self.target_area.children[0].children:
+            for obj in self.target_area.children:
                 if type(obj) == Label:
                     obj : Label
                     cr.set_source_rgb(1, 0, 0)
@@ -843,7 +854,7 @@ class Engravtor(gfx.WorldObject):
                     text_extents = cr.text_extents(obj.text)
 
                     xoffset = 0.29
-                    yoffset = 0.11
+                    yoffset = 0.18
                     cr.move_to(obj.local.x * 1000 - text_extents.width / 2 + xoffset, 
                                 -(obj.local.y * 1000 + descent - text_extents.height / 2 + yoffset))
                     cr.text_path(obj.text)
@@ -852,7 +863,6 @@ class Engravtor(gfx.WorldObject):
                     cr.rectangle(obj.local.x * 1000 - text_extents.width / 2 + xoffset, 
                                 -(obj.local.y * 1000 + text_extents.height / 2 + yoffset),
                                 text_extents.width,text_extents.height)
-
                     cr.stroke()
 
                 elif type(obj) == Bitmap:
@@ -861,9 +871,71 @@ class Engravtor(gfx.WorldObject):
                     pass
 
         return width,height
+    
+    def excute(self,line : str):
+        print(line)
+        commands = line.split(' ')
+        for cmd in commands:
+            if cmd == 'G0':
+                self.laser = None
+                self.line = None
+                self.cutting = False
+                self.focus.local.y = self.focus.local.x = 0
+            elif cmd == 'M3':
+                pos = (self.focus.local.x,self.focus.local.y,0)
+                self.line = gfx.Line(gfx.Geometry(positions=[pos]),gfx.LineMaterial(thickness=self.light_spot_size,thickness_space='world',color='red'))
+
+                origin = self.laser_aperture.local.position[:]
+                direction = self.focus.local.position[:]                
+                self.laser = gfx.Line(gfx.Geometry(positions=[origin,direction]),gfx.LineMaterial(thickness=self.light_spot_size,thickness_space='world',color='red'))
+                self.target_area.add(self.laser)
+            elif cmd == 'G1':
+                self.cutting = True
+            elif cmd == 'M5':
+                self.line = None
+                self.cutting = False
+    
+                if self.laser:
+                    self.target_area.remove(self.laser)
+                    self.laser = None
+            elif cmd.startswith('X'):
+                self.focus.local.x = float(cmd[1:]) / 1000
+            elif cmd.startswith('Y'):
+                self.focus.local.y = float(cmd[1:]) / 1000
+            else:
+                pass
+        
+        if self.cutting:
+            pos = (self.focus.local.x,self.focus.local.y,0)
+            geometry = gfx.Geometry(positions=np.concatenate([self.line.geometry.positions.data,[pos]],dtype=np.float32))
+            self.line.geometry = geometry
+
+            origin = self.laser_aperture.local.position[:]
+            direction = self.focus.local.position[:]
+            self.laser.geometry = gfx.Geometry(positions=[origin,direction])
+
+            if self.line.geometry.positions.data.shape[0] == 2:
+                aabb = self.target.get_geometry_bounding_box()
+                self.line.local.z = (aabb[1][2] - aabb[0][2]) / 2
+                self.target.add(self.line)
 
     def preview(self,gcode):
-        return 
+        self.gcode = gcode.splitlines()
+
+        def fun(i):
+            if i == len(self.gcode): return
+            
+            while True:
+                line = self.gcode[i].strip()
+                if line and not line.startswith(';'): break
+                i+=1
+
+            self.excute(line)
+
+            self.steps.append(lambda: fun(i+1))
+
+        self.steps.append(lambda: fun(0))
 
     def run(self,gcode):
         return
+

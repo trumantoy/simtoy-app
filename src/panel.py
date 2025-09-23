@@ -252,7 +252,6 @@ class Panel (Gtk.Paned):
             gcode = f.read()
             self.textview_gcode.get_buffer().set_text(gcode)
 
-        engravtor.preview(gcode)
 
     @Gtk.Template.Callback()
     def btn_preview_clicked(self,sender,*args):
@@ -261,8 +260,10 @@ class Panel (Gtk.Paned):
         listviewitem = model.get_item(i)
         item = listviewitem.get_item()
         engravtor = item.obj
-
-        # engravtor.preview(gcode)
+        buffer = self.textview_gcode.get_buffer()
+        start,end = buffer.get_bounds()
+        gcode = buffer.get_text(start,end,True)
+        engravtor.preview(gcode)
 
     @Gtk.Template.Callback()
     def btn_run_clicked(self,sender,*args):
@@ -332,8 +333,8 @@ class Panel (Gtk.Paned):
 
         # 使用临时文件作为输出路径
         args = parser.parse_args([svg_filepath, gc_filepath, '--pixelsize','1','--origin',str(-width/2),str(-height/2)])
-
-
+        
+        
         if args.color_coded != "":
             if args.pathcut:
                 print("options --color_coded and --pathcut cannot be used at the same time, program abort")

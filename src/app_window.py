@@ -98,6 +98,8 @@ class AppWindow (Gtk.ApplicationWindow):
         self.hotbar.set_items(self.tool.get_hot_items())
         self.hotbar.connect('item_added',lambda sender,obj: self.panel.add(obj,self.tool))
 
+        GLib.timeout_add(1000/180,lambda: self.editor.step() or True)
+
     def do_size_allocate(self, width: int, height: int, baseline: int):
         if hasattr(self,'prev_width'): 
             panel = self.stack.get_visible_child()
@@ -132,8 +134,6 @@ class AppWindow (Gtk.ApplicationWindow):
     
 
     def draw(self,area, cr : cairo.Context, area_w, area_h):
-        self.editor.step()
-
         width,height = self.canvas.get_physical_size()
 
         if width != area_w or height != area_h: 

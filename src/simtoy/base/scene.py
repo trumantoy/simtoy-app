@@ -22,32 +22,32 @@ class Editor(gfx.Scene):
         self.persp_camera = persp_camera
         self.ortho_camera = ortho_camera
                 
-        grid0 = gfx.Grid(
-            gfx.box_geometry(),
-            gfx.GridMaterial(
-                major_step=1,
-                minor_step=0.1,
-                thickness_space="world",
-                axis_thickness=0,
-                major_thickness=0.005,
-                minor_thickness=0.001,
-                infinite=True,
-            ),
-            orientation="xy",
-        )
-        self.add(grid0)
+        # grid0 = gfx.Grid(
+        #     gfx.box_geometry(),
+        #     gfx.GridMaterial(
+        #         major_step=1,
+        #         minor_step=0.1,
+        #         thickness_space="world",
+        #         axis_thickness=0,
+        #         major_thickness=0.005,
+        #         minor_thickness=0.001,
+        #         infinite=True,
+        #     ),
+        #     orientation="xy",
+        # )
+        # self.add(grid0)
 
-        self.skybox = SkyBox()
-        self.add(self.skybox)
+        # self.skybox = SkyBox()
+        # self.add(self.skybox)
 
-        self.env_map = self.skybox.material.map
+        # self.env_map = self.skybox.material.map
 
-        self.ground = Ground()
-        self.ground.receive_shadow = True
-        self.ground.local.z -= 0.001
+        # self.ground = Ground()
+        # self.ground.receive_shadow = True
+        # self.ground.local.z -= 0.001
         # self.ground.material.env_map = self.env_map
 
-        self.add(self.ground)
+        # self.add(self.ground)
 
         ambient = gfx.AmbientLight()
         self.add(ambient)
@@ -60,12 +60,13 @@ class Editor(gfx.Scene):
         
     def step(self,dt=1/240):
         if self.steps:
-            if not self.steps[0](): return
+            self.steps[0]()
             self.steps.pop(0)
 
         for entity in self.children:
             if 'step' not in dir(entity): continue 
             entity.step(dt)
+
 
     def get_viewport(self):
         return [self.persp_camera,self.ortho_camera]
