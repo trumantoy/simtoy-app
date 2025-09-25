@@ -792,12 +792,12 @@ class Engravtor(gfx.WorldObject):
         self.target = target
         self.target_area.add(target)
     
-        target.add_event_handler(lambda e: e.button == 3 and self.unselect_all(target),'pointer_down')
+        target.add_event_handler(lambda e: e.button == 3 and self.unselect_all(self.target_area),'pointer_down')
  
 
     def unselect_all(self,parent : gfx.WorldObject):
         for obj in parent.children:
-            if type(obj).__mro__ == TranformHelper:
+            if TranformHelper in type(obj).__mro__:
                 obj : TranformHelper
                 obj.set_tranform_visible(False)
 
@@ -809,7 +809,7 @@ class Engravtor(gfx.WorldObject):
             aabb = self.target.get_geometry_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
-            element = Label('大',0.01,'KaiTi',name='文本')
+            element = Label('中国制造',0.01,'KaiTi',name='文本')
             element.local.z = target_height + 0.00001
             element._camera = self.persp_camera
             element.set_tranform_visible(False)
@@ -818,15 +818,14 @@ class Engravtor(gfx.WorldObject):
 
         def bitmap():
             target = self.target
-            aabb = target.get_bounding_box()
+            aabb = target.get_geometry_bounding_box()
             target_height = (aabb[1][2] - aabb[0][2])
             
             element = Bitmap()
-            element_height_offset = target_height / 2
-            element.local.z += element_height_offset
+            element.local.z = target_height + 0.00001
             element._camera = self.persp_camera 
             element.set_tranform_visible(False)
-            target.add(element)
+            self.target_area.add(element)
             return element 
 
         return [('文本',label,'format-text-bold'),('位图',bitmap,'image-x-generic-symbolic')]
@@ -853,8 +852,8 @@ class Engravtor(gfx.WorldObject):
                     ascent, descent, font_height, max_x_advance, max_y_advance = cr.font_extents()
                     text_extents = cr.text_extents(obj.text)
 
-                    xoffset = 0.29
-                    yoffset = 0.18
+                    xoffset = 0.
+                    yoffset = 0.
                     cr.move_to(obj.local.x * 1000 - text_extents.width / 2 + xoffset, 
                                 -(obj.local.y * 1000 + descent - text_extents.height / 2 + yoffset))
                     cr.text_path(obj.text)
