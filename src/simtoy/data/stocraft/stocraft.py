@@ -219,36 +219,136 @@ def up(args,records,up_records : dict):
             up_records.update(df_up_records.to_dict(orient='list'))
     return 60*60
 
+def get_stock_spot():
+    h15 = datetime.now().replace(hour=15, minute=0, second=0)
+
+    stocks_file_path = os.path.join(db_dir,f'0-0-行情.csv')
+
+    try:
+        if os.path.exists(stocks_file_path) and datetime.now().date() == datetime.fromtimestamp(os.path.getmtime(stocks_file_path)).date():
+            stocks = pd.read_csv(stocks_file_path,dtype={'代码':str})
+        elif datetime.now().weekday() < 5 and h15 < datetime.now():
+            stocks = ak.stock_zh_a_spot_em()
+            
+            condition = ((stocks['代码'].str.startswith('00')) | (stocks['代码'].str.startswith('60'))) & \
+                        (~stocks['名称'].str.startswith('PT')) & \
+                        (~stocks['名称'].str.startswith('ST')) & \
+                        (~stocks['名称'].str.startswith('*ST')) & \
+                        (~stocks['最新价'].isnull()) & \
+                        (stocks['换手率'] > 0)
+            stocks = stocks[condition].reset_index(drop=True)
+            stocks.to_csv(stocks_file_path,index=False)
+            spot_filepath = os.path.join(db_dir,f'0-{datetime.now().strftime("%Y%m%d")}-行情.csv')
+            stocks.to_csv(spot_filepath,index=False) 
+        else:
+            raise Exception('获取股票行情失败')
+    except:
+        file_paths = glob.glob(os.path.join(db_dir, '0-*-行情.csv'))
+        if not file_paths:
+            return None
+        
+        stocks = pd.read_csv(file_paths[-1],dtype={'代码':str})
+
+    return stocks
+
+def get_stock_intraday(code,date):
+    try:
+        filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
+        if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+            info = ak.stock_individual_info_em(code,10)
+            if info[info['item'] == '总市值'].iloc[0]['value'] == '-':
+                return True
+
+            if info[info['item'] == '股票代码'].iloc[0]['value'] != code:
+                return True
+            
+            bid = ak.stock_bid_ask_em(symbol=code)
+            info.loc[len(info.index)] = ['昨收',bid[bid['item'] == '昨收'].iloc[0]['value']]
+            info.loc[len(info.index)] = ['今开',bid[bid['item'] == '今开'].iloc[0]['value']]
+            info.to_csv(filepath,index=False)
+
+        filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+        if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+            deals = ak.stock_intraday_em(symbol=code)
+            deals.to_csv(filepath,index=False)
+
+        filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
+        if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+            prefix = 'SH' if code[0:2] == '60' else 'SZ' if code[0:2] == '00' else ''
+            ranks = ak.stock_hot_rank_detail_realtime_em(prefix + code)
+            ranks = ranks[50:].reset_index(drop=True)
+            ranks['时间'] = ranks['时间'].str[11:]
+            ranks.to_csv(filepath,index=False)
+    except (ConnectionError, ReadTimeout, ValueError, ConnectionResetError,requests.exceptions.ChunkedEncodingError,requests.exceptions.ConnectionError):
+        return False
+    except (BrokenPipeError, KeyboardInterrupt):
+        return False
+    except:
+        return True
+
+    return True
 
 def worker(id,req : Queue,res : Queue):
     while True:
+        fun,code,date,sleep = req.get()
+    
+        if fun == 'sync':
+            print(req.qsize(),code,flush=True)
+            if not get_stock_intraday(code,date):
+                req.put((fun,code,date,10))
+        else:
+            pass
 
-        pass
+def player(req : Queue):
+    shared = mp.Manager()
+    worker_req = shared.Queue()
+    worker_res = shared.Queue()
 
-def player(req : Queue,res : Queue):
-    while True:
-        h9 = datetime.now().replace(hour=9, minute=15, second=0)
-        h11 = datetime.now().replace(hour=11, minute=30, second=0)
-        h13 = datetime.now().replace(hour=13, minute=0, second=0)
-        h15 = datetime.now().replace(hour=15, minute=0, second=0)
-
-        if datetime.now() < h9:
-            continue
-
-        if datetime.now() < h15:
-            continue
-
-if __name__ == '__main__':
-    req = shared.Queue()
-    res = shared.Queue()
-
-    for i in range(mp.cpu_count()):
-        shared = mp.Manager()
-        
-        process = mp.Process(target=worker,name=f'牛马-{i}',args=[req,res],daemon=True)
+    for i in range(os.cpu_count()):
+        process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req,worker_res],daemon=True)
         process.start()
 
-    threading.Thread(target=player,name='玩家',args=[req,res],daemon=True).start()
+    os.makedirs(db_dir,exist_ok=True)
+
+    while True:
+        now = datetime.now()
+        h9 = now.replace(hour=9, minute=15, second=0)
+        h11 = now.replace(hour=11, minute=30, second=0)
+        h13 = now.replace(hour=13, minute=0, second=0)
+        h15 = now.replace(hour=15, minute=0, second=0)
+        h24 = now.replace(hour=23, minute=59, second=59)
+
+        stocks = get_stock_spot()
+
+        while datetime.now() < h9:
+            worker_req(*req.get())
+        
+        while datetime.now() < h11:
+            worker_req(*req.get())
+
+        while datetime.now() < h13:
+            worker_req(*req.get())
+
+        while datetime.now() < h15:
+            worker_req(*req.get())
+        
+        stocks = get_stock_spot()
+        
+        date = now.strftime('%Y%m%d')
+        start = now.replace(hour=9, minute=30, second=0).strftime('%Y-%m-%d %H:%M:%S')
+        end = now.replace(hour=9, minute=40, second=0).strftime('%Y-%m-%d %H:%M:%S')
+        df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
+        if not df.empty: stocks.apply(lambda x: worker_req.put(('sync',x['代码'],date,1)),axis=1)
+
+        while datetime.now() < h24:
+            worker_req(*req.get())
+
+from queue import Queue
+
+if __name__ == '__main__':
+    req = Queue()
+ 
+    threading.Thread(target=player,name='玩家',args=[req],daemon=True).start()
 
     while True:
         if len(sys.argv) > 1:
@@ -277,13 +377,10 @@ if __name__ == '__main__':
             print('-')
         elif args.mode == 'up':
             codes = args.code.split(',')
-            params['codes'] = codes
-            df = pd.DataFrame(dict(zip(up_records.keys(),up_records.values())))
-            if df.shape[0]: print(df.sort_values('评分').tail(10).to_string())
+            # if not df.empty: print(df.to_string())
             print('-')
         elif args.mode == 'play':
             print('-')
-            pass
         else:
             print(params['status'])
             print('-')
