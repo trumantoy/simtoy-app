@@ -139,38 +139,81 @@ def sync(args : DictProxy=dict(),records : DictProxy=dict()):
     args['status'] = '数据采集完成'
     return 60 * 60
 
-def feature(code,date):
-    特征 = pd.DataFrame(columns=['起点','终点','代价','涨幅'])
+def feature(code,date,interval_seconds = 5):
+    特征 = pd.DataFrame(columns=['起时','终时','起价','终价','代价','涨幅','支撑价'])
     
     transaction_filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-    # info_filepath = os.path.join(db_dir,f'{code}-{date}-行情.csv')
-    # rank_filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
-    
+    info_filepath = os.path.join(db_dir,f'{code}-{date}-行情.csv')
+    rank_filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
+
     if not os.path.exists(transaction_filepath):
-        return None
+        return 特征
 
     交易 = pd.read_csv(transaction_filepath)
-    # 信息 = pd.read_csv(info_filepath)
-    # 人气 = pd.read_csv(rank_filepath)
-    基点 = 5.70 #昨收
-    起点 = 基点
-    
+    行情 = pd.read_csv(info_filepath)
+    人气 = pd.read_csv(rank_filepath)
+
+    基价 = float(行情[行情['item'] == '昨收'].iloc[0]['value'])
+    起价 = 基价
+
+    当前 = None
+
     for i,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质']
-
         if 买卖盘性质 == '中性盘':
             continue
 
-        print(r.to_list())
-
-        if 时间 != '09:25:00':
-            终点 = 成交价
-
+        if 时间.startswith('09:25'):
+            起时 = 终时 = 时间
+            终价 = 成交价
+            代价 = round((成交价 * 手数 * 100) / 1e4,1)
+            涨幅 = round((成交价 - 起价) / 基价 * 100,2)
+            支撑价 = round((终价 - 起价) / 2 + 起价,2)
+            当前 = 起时,终时,起价,终价,代价,涨幅,支撑价,买卖盘性质
         else:
-            起点 = 成交价
-            代价 = 成交价 * 手数
-            涨幅 = (终点 - 起点) / 基点 * 100
-            特征[len(特征.index)] = [起点,终点,代价,涨幅]
+            _,终时,_,终价,_,_,_,性质 = 当前
+
+            time1 = datetime.strptime(终时, "%H:%M:%S")
+            time2 = datetime.strptime(时间, "%H:%M:%S")
+            time_diff = time2 - time1
+            incre_diff = round((终价 - 起价) / 基价 * 100,2) - round((成交价 - 起价) / 基价 * 100,2)
+
+            if (买卖盘性质 != 性质 and 成交价 == 终价):
+                买卖盘性质 = 性质
+
+            if time_diff.total_seconds() > interval_seconds or (性质 != 买卖盘性质 and 成交价 != 终价):
+                当前位置 = len(特征.index)
+                涨幅 = round((终价 - 起价) / 基价 * 100,2)
+                支撑价 = round((终价 - 起价) / 2 + 起价,2)
+
+                if 特征.shape[0]:
+                    最近 = 特征.loc[当前位置-1]
+                    最近涨幅 = 最近['涨幅']
+                    time1 = datetime.strptime(最近['终时'], "%H:%M:%S")
+                    time2 = datetime.strptime(起时, "%H:%M:%S")
+                    time_diff = time2 - time1
+
+                    if time_diff.total_seconds() < interval_seconds:
+                        if 最近['起价'] == 最近['终价'] \
+                            or 最近['起价'] < 最近['终价'] and 最近涨幅 + 涨幅 >= 最近涨幅 \
+                            or 最近['起价'] > 最近['终价'] and 最近涨幅 + 涨幅 <= 最近涨幅: 
+                        
+                            起时 = 最近['起时']
+                            起价 = 最近['起价']
+                            代价 = 最近['代价'] + 代价
+                            当前位置 = 当前位置 - 1
+
+                特征.loc[当前位置] = [起时,终时,起价,终价,代价,涨幅,支撑价]
+
+                涨幅 = 0
+                代价 = 0
+                起时 = 时间
+                起价 = 终价
+
+            代价 += round((成交价 * 手数 * 100) / 1e4,1)
+            终时 = 时间
+            终价 = 成交价
+            当前 = 起时,终时,起价,终价,代价,涨幅,支撑价,买卖盘性质
     return 特征
     # feature_filepath = os.path.join(db_dir,f'{code}-0-特征.csv')
     # if os.path.exists(feature_filepath) and datetime.now().date() == datetime.fromtimestamp(os.path.getmtime(feature_filepath)).date():
@@ -221,16 +264,24 @@ def feature(code,date):
     #     round(大额占比,2),round(巨额占比,2)]
     # return 特征
 
-def up(worker_req : mp.Queue,worker_res : mp.Queue,dates):
+def up(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
     df_up_records = pd.DataFrame(columns=['代码','名称','涨幅','流通市值','评分'])
     stocks = get_stock_spot()
-    stocks = stocks[stocks['名称'].isin(['步步高','景兴纸业'])]    
+    stocks = stocks[stocks['代码'].isin(codes)]
+
+    start = datetime.strptime(date,'%y%m%d')
+    end = start - timedelta(days)
+    if days < 0: start,end = end,start
+    dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
+    dates.reverse()
+
     for date in dates:
         stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date)),axis=1)
 
     for _ in range(stocks.shape[0] * len(dates)):
         _,code,date,val = worker_res.get()
         print(code,date)
+        print(val.to_string())
     
 def get_stock_spot():
     h15 = datetime.now().replace(hour=15, minute=0, second=0)
@@ -336,7 +387,7 @@ if __name__ == '__main__':
     worker_req = shared.Queue()
     worker_res = shared.Queue()
 
-    for i in range(os.cpu_count()):
+    for i in range(min(4,os.cpu_count())):
         process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req,worker_res],daemon=True)
         process.start()
  
@@ -363,11 +414,7 @@ if __name__ == '__main__':
         
         if args.mode == 'up':
             codes = args.code.split(',')            
-            start = datetime.strptime(args.date,'%y%m%d')
-            end = start + timedelta(args.days)
-            if args.days < 0: start,end = end,start
-            dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
-            up(worker_req,worker_res,dates)
+            up(worker_req,worker_res,codes,args.date,args.days)
             # if not df.empty: print(df.to_string())
             print('-')
         elif args.mode == 'play':
