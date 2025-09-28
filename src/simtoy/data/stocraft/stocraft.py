@@ -156,8 +156,6 @@ def feature(code,date,interval_seconds = 5):
     基价 = float(行情[行情['item'] == '昨收'].iloc[0]['value'])
     起价 = 基价
 
-    当前 = None
-
     for i,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质']
         if 买卖盘性质 == '中性盘':
@@ -184,7 +182,7 @@ def feature(code,date,interval_seconds = 5):
             if time_diff.total_seconds() > interval_seconds or (性质 != 买卖盘性质 and 成交价 != 终价):
                 当前位置 = len(特征.index)
                 涨幅 = round((终价 - 起价) / 基价 * 100,2)
-                支撑价 = round((终价 - 起价) / 2 + 起价,2)
+                支撑价 = round((终价 + 起价) / 2,2)
 
                 if 特征.shape[0]:
                     最近 = 特征.loc[当前位置-1]
@@ -193,15 +191,15 @@ def feature(code,date,interval_seconds = 5):
                     time2 = datetime.strptime(起时, "%H:%M:%S")
                     time_diff = time2 - time1
 
-                    if time_diff.total_seconds() < interval_seconds:
-                        if 最近['起价'] == 最近['终价'] \
-                            or 最近['起价'] < 最近['终价'] and 最近涨幅 + 涨幅 >= 最近涨幅 \
-                            or 最近['起价'] > 最近['终价'] and 最近涨幅 + 涨幅 <= 最近涨幅: 
+                    # if time_diff.total_seconds() < interval_seconds:
+                    #     if 最近['起价'] == 最近['终价'] \
+                    #         or 最近['起价'] < 最近['终价'] and 最近涨幅 + 涨幅 >= 最近涨幅 \
+                    #         or 最近['起价'] > 最近['终价'] and 最近涨幅 + 涨幅 <= 最近涨幅: 
                         
-                            起时 = 最近['起时']
-                            起价 = 最近['起价']
-                            代价 = 最近['代价'] + 代价
-                            当前位置 = 当前位置 - 1
+                    #         起时 = 最近['起时']
+                    #         起价 = 最近['起价']
+                    #         代价 = 最近['代价'] + 代价
+                    #         当前位置 = 当前位置 - 1
 
                 特征.loc[当前位置] = [起时,终时,起价,终价,代价,涨幅,支撑价]
 
@@ -215,74 +213,51 @@ def feature(code,date,interval_seconds = 5):
             终价 = 成交价
             当前 = 起时,终时,起价,终价,代价,涨幅,支撑价,买卖盘性质
     return 特征
-    # feature_filepath = os.path.join(db_dir,f'{code}-0-特征.csv')
-    # if os.path.exists(feature_filepath) and datetime.now().date() == datetime.fromtimestamp(os.path.getmtime(feature_filepath)).date():
-    #     特征 = pd.read_csv(feature_filepath)
-    # else:
-    #     特征 = feature(code)
-    #     特征.to_csv(feature_filepath)
-    # a = sum(特征['买卖比'] > 1.5)
-    # b = sum(特征['巨额占比'] > 0.5)
-    # 涨跌 = 特征['涨幅'].iloc[-1]
-    # c = 1 if 0 < 涨跌 < 5 else -1
-    # d = 2 if 60 < row['流通市值'] / 1e8 < 150 else -2
-    # s = a + b + c + d
-    # df_up_records.loc[len(df_up_records.index)] = [code,name,涨跌,round(row['流通市值'] / 1e8,1),s]
-
-
-    # 人气['time'] = pd.to_datetime(file_date + ' ' + 人气['时间'])
-    # 人气 = 人气.set_index('time').between_time('9:20','15:0').reset_index(drop=True)
-    # 人气['时间'] = file_date + ' ' + 人气['时间']
-    # 人气['热度'] = np.log2(人气['排名'])
-
-    # 信息.loc[len(信息.index)] = ['日期',file_date]
-    # 交易['时间'] = file_date + ' ' + 交易['时间']
-
-    # 交易 = 交易[(交易['买卖盘性质'] != '中性盘')].copy()
-    # if 0 == 交易.shape[0]: continue
-    # 交易['金额'] = 交易['成交价'] * 交易['手数'] * 100
-    # 买盘 = 交易[交易['买卖盘性质'] == '买盘']
-    # 卖盘 = 交易[交易['买卖盘性质'] == '卖盘']
-    # 买总手 = round(买盘['手数'].sum())
-    # 卖总手 = round(卖盘['手数'].sum())
-    # 买总额 = round(买盘['金额'].sum() / 1e8,1)
-    # 卖总额 = round(卖盘['金额'].sum() / 1e8,1)
-    # 昨收价 = float(信息[信息['item'] == '昨收'].iloc[0]['value'])
-    # 涨幅 = round((交易['成交价'].iloc[-1] / 昨收价 - 1) * 100,2)
-
-    # 总额 = (买总额 + 卖总额) * 1e4
-    # 金额 = 交易['金额'] / 1e4
-    # 小额占比 = 金额[(金额 < 10)].sum() / 总额
-    # 中额占比 = 金额[(10 < 金额) & (金额 < 50)].sum() / 总额
-    # 大额占比 = 金额[(50 < 金额) & (金额 < 100)].sum() / 总额
-    # 巨额占比 = 金额[(100 < 金额)].sum() / 总额
-
-    # 特征.loc[len(特征.index)] = [
-    #     file_date,round(买总手/卖总手 if 卖总手>0 else 0,2),
-    #     买总额,卖总额,涨幅,
-    #     round(小额占比,2),round(中额占比,2),
-    #     round(大额占比,2),round(巨额占比,2)]
-    # return 特征
 
 def up(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
-    df_up_records = pd.DataFrame(columns=['代码','名称','涨幅','流通市值','评分'])
+    up_df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分'])
+
     stocks = get_stock_spot()
-    stocks = stocks[stocks['代码'].isin(codes)]
+    stocks_seleted = stocks[stocks['代码'].isin(codes)]
+    min_market_cap = 0 * 1e8  # 50亿
+    max_market_cap = 0 * 1e8  # 150亿
+    stocks = stocks[(stocks['流通市值'] >= min_market_cap) & (stocks['流通市值'] <= max_market_cap)]
+    stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()
 
     start = datetime.strptime(date,'%y%m%d')
     end = start - timedelta(days)
     if days < 0: start,end = end,start
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
-    dates.reverse()
+
+    from matplotlib import pyplot as plt
 
     for date in dates:
         stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date)),axis=1)
-
-    for _ in range(stocks.shape[0] * len(dates)):
-        _,code,date,val = worker_res.get()
-        print(code,date)
-        print(val.to_string())
     
+        for _ in range(stocks.shape[0]):
+            fun,code,date,feature_df = worker_res.get()
+            feature_df : pd.DataFrame
+            bins = [0, 100, 500, 1000, 1000000]
+            labels = ['小散', '牛散', '游资', '主力']
+            feature_df['代价区间'] = pd.cut(feature_df['代价'], bins=bins, labels=labels)
+            distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','支撑价':'mean',}).round(2)
+            
+            print(distribution)
+            评分 = 0
+            up_df.loc[up_df.index] = [date,code,stocks[stocks['代码'] == code]['名称'].values[0],
+                                      stocks[stocks['代码'] == code]['流通市值'].values[0],
+                                      stocks[stocks['代码'] == code]['行业'].values[0],
+                                      distribution['涨幅'].sum(),评分]
+
+def play(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
+    start = datetime.strptime(date,'%y%m%d')
+    end = start - timedelta(days)
+    if days < 0: start,end = end,start
+    dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
+
+    for date in dates:
+        up(worker_req,worker_res,codes,date,-3)
+
 def get_stock_spot():
     h15 = datetime.now().replace(hour=15, minute=0, second=0)
 
@@ -316,10 +291,13 @@ def get_stock_spot():
 
 def get_stock_intraday(code,date):
     try:
-        filepath = os.path.join(db_dir,f'{code}-{date}-行情.csv')
+        filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
         if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+            info = ak.stock_individual_info_em(code,10)
+            if info[info['item'] == '总市值'].iloc[0]['value'] == '-': return True
+            if info[info['item'] == '股票代码'].iloc[0]['value'] != code: return True
             bid = ak.stock_bid_ask_em(symbol=code)
-            bid[20:].to_csv(filepath,index=False)
+            pd.concat([info,bid[20:]],ignore_index=True).to_csv(filepath,index=False)
 
         filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
         if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
@@ -391,8 +369,6 @@ if __name__ == '__main__':
         process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req,worker_res],daemon=True)
         process.start()
  
-    threading.Thread(target=data_syncing_of_stock_intraday,name='股票数据同步',args=[worker_req,worker_res],daemon=True).start()
-
     while True:
         if len(sys.argv) > 1:
             cmd = sys.argv[1:]
@@ -412,15 +388,15 @@ if __name__ == '__main__':
         
         args = parser.parse_args(cmd)
         
-        if args.mode == 'up':
-            codes = args.code.split(',')            
+        if args.mode == 'sync':
+            threading.Thread(target=data_syncing_of_stock_intraday,name='股票数据同步',args=[worker_req,worker_res],daemon=True).start()
+        elif args.mode == 'up':
+            codes = args.code.split(',')
             up(worker_req,worker_res,codes,args.date,args.days)
-            # if not df.empty: print(df.to_string())
-            print('-')
         elif args.mode == 'play':
-            
-            print('-')
+            codes = args.code.split(',')
+            play(worker_req,worker_res,codes,args.date,args.days)
         else:
-            print(params['status'])
-            print('-')
             pass
+        
+        print('-')
