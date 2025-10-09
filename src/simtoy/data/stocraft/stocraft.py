@@ -25,21 +25,21 @@ import glob
 
 db_dir = 'db'
 
-def feature(code,date,interval_seconds = 5):
+def feature(code,date,info,interval_seconds = 5):
     特征 = pd.DataFrame(columns=['起时','终时','起价','终价','代价','涨幅','均价'])
     
     transaction_filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-    info_filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
-    rank_filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
+    # info_filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
+    # rank_filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
 
     if not os.path.exists(transaction_filepath):
         return 特征
 
     交易 = pd.read_csv(transaction_filepath)
-    信息 = pd.read_csv(info_filepath)
-    人气 = pd.read_csv(rank_filepath)
+    # 信息 = pd.read_csv(info_filepath)
+    # 人气 = pd.read_csv(rank_filepath)
 
-    基价 = float(信息[信息['item'] == '昨收'].iloc[0]['value'])
+    基价 = info['昨收']
     起价 = 基价
 
     for i,r in 交易.iterrows():
@@ -167,23 +167,21 @@ def measure(code,date,freq=10):
 
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     codes,date,days,cap = args
-    df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分'])
-
-    stocks = get_stock_spot()
-    
-    stocks_seleted = stocks[stocks['代码'].isin(codes)]
-    stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
-    stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()
     end = datetime.strptime(date,'%Y%m%d')
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
     
     from matplotlib import pyplot as plt
     for date in dates:
-        # worker_req.qsize()
-        stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date)),axis=1)
-    dfs = dict()
+        stocks = os.path.join(db_dir,f'0-{date}-行情.csv')
+        stocks_seleted = stocks[stocks['代码'].isin(codes)]
+        stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
+        stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()    
+        stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)),axis=1)
 
+    df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分'])
+    dfs = dict()
+          
     for _ in range(stocks.shape[0]*len(dates)):
         fun,code,date,feature_df = worker_res.get()
         
@@ -199,7 +197,7 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     labels = ['小散', '牛散', '游资', '主力']
     feature_df['资金类别'] = pd.cut(feature_df['代价'], bins=bins, labels=labels)
     # distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','均价':'mean',}).round(2)
-
+    
     score = 0
     
 
@@ -245,29 +243,30 @@ def get_stock_spot():
 
 def get_stock_intraday(code,date):
     try:
-        filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
-        if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-            info = ak.stock_individual_info_em(code,10)
-            if info[info['item'] == '总市值'].iloc[0]['value'] == '-': return True
-            if info[info['item'] == '股票代码'].iloc[0]['value'] != code: return True
-            bid = ak.stock_bid_ask_em(symbol=code)
-            pd.concat([info,bid[20:]],ignore_index=True).to_csv(filepath,index=False)
+        # filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
+        # if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+        #     info = ak.stock_individual_info_em(code,10)
+        #     time.sleep(2)
+        #     if info[info['item'] == '总市值'].iloc[0]['value'] == '-': return True
+        #     if info[info['item'] == '股票代码'].iloc[0]['value'] != code: return True
+        #     bid = ak.stock_bid_ask_em(symbol=code)
+        #     pd.concat([info,bid[20:]],ignore_index=True).to_csv(filepath,index=False)
+        #     time.sleep(2)
 
         filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
         if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
             deals = ak.stock_intraday_em(symbol=code)
             deals.to_csv(filepath,index=False)
-
-        filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
-        if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-            prefix = 'SH' if code[0:2] == '60' else 'SZ' if code[0:2] == '00' else ''
-            ranks = ak.stock_hot_rank_detail_realtime_em(prefix + code)
-            ranks = ranks[50:].reset_index(drop=True)
-            ranks['时间'] = ranks['时间'].str[11:]
-            ranks.to_csv(filepath,index=False)
+            
+        # filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
+        # if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+        #     prefix = 'SH' if code[0:2] == '60' else 'SZ' if code[0:2] == '00' else ''
+        #     ranks = ak.stock_hot_rank_detail_realtime_em(prefix + code)
+        #     ranks = ranks[50:].reset_index(drop=True)
+        #     ranks['时间'] = ranks['时间'].str[11:]
+        #     ranks.to_csv(filepath,index=False)
+        #     time.sleep(2)
     except (ConnectionError, ReadTimeout, ValueError, ConnectionResetError,requests.exceptions.ChunkedEncodingError,requests.exceptions.ConnectionError):
-        return False
-    except (BrokenPipeError, KeyboardInterrupt):
         return False
     except:
         return True
@@ -277,16 +276,12 @@ def get_stock_intraday(code,date):
 def worker(id,req : mp.Queue,res : mp.Queue):
     while True:
         args = req.get()
-    
-        if args[0] == 'sync':
-            if not get_stock_intraday(args[1],args[2]):
-                req.put(args)
-        else:
-            fun = args[0]
-            code = args[1]
-            date = args[2]
-            val = eval(f'{fun}("{code}","{date}")')
-            res.put((fun,code,date,val))
+        fun = args[0]
+        code = args[1]
+        date = args[2]
+        info = args[3]
+        val = eval(f'{fun}("{code}","{date}",{info})')
+        res.put((fun,code,date,val))
 
 def data_syncing_of_stock_intraday(worker_req : mp.Queue,worker_res : mp.Queue):
     while True:
@@ -308,7 +303,9 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,worker_res : mp.Queue):
         start = now.replace(hour=9, minute=30, second=0).strftime('%Y-%m-%d %H:%M:%S')
         end = now.replace(hour=9, minute=40, second=0).strftime('%Y-%m-%d %H:%M:%S')
         df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
-        if now.weekday() < 5 and not df.empty: stocks.apply(lambda r: worker_req.put(('sync',r['代码'],date)),axis=1)
+        if now.weekday() < 5 and not df.empty: 
+            for i,r in stocks.iterrows():
+                while not get_stock_intraday(r['代码'],date): time.sleep(1)
 
         while datetime.now() < h24:
             time.sleep(60)
@@ -352,6 +349,6 @@ if __name__ == '__main__':
             codes = args.code.split(',')
             play(worker_req,worker_res,codes,args.date,args.days)
         else:
-            pass
+            print('req',worker_req.qsize(),'res',worker_res.qsize())
         
         print('-')
