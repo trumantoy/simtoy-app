@@ -33,7 +33,8 @@ class Panel (Gtk.Paned):
 
         self.selection_model = Gtk.SingleSelection.new(self.tree_model)
         self.selection_model.set_autoselect(True)
-        self.selection_model.set_can_unselect(False)
+        self.selection_model.set_can_unselect(True)
+        self.selection_model.connect('selection-changed', self.listview_selection_changed)
         self.cur_item_index = Gtk.INVALID_LIST_POSITION
         
         factory = Gtk.SignalListItemFactory()
@@ -42,8 +43,6 @@ class Panel (Gtk.Paned):
                 
         self.listview.set_model(self.selection_model)
         self.listview.set_factory(factory)
-
-        self.selection_model.connect('selection-changed', self.listview_selection_changed)
         
         # # 创建右键点击手势
         # left_click_gesture = Gtk.GestureClick()
@@ -214,21 +213,18 @@ class Panel (Gtk.Paned):
         item.obj.material.size = value
 
     @Gtk.Template.Callback()
-    def roofcolor_activated(self,sender,*args):
-        print('11')
-
-    @Gtk.Template.Callback()
-    def roomcolor_activated(self,sender,*args):
-        i = self.selection_model.get_selected()
-        item = self.selection_model.get_item(i).get_item()
-        color = self.roomcolor.get_color()
-        item.obj.material.color = (color.red, color.green, color.blue)
-
-    @Gtk.Template.Callback()
     def btn_connect_toggled(self,sender,*args):
+        model = self.listview.get_model()
+        i = model.get_selected()
+        listviewitem = model.get_item(i)
+        item = listviewitem.get_item()
+        engravtor = item.obj
+
         if sender.get_active():
+            engravtor.controller.connect(self.dp_com_port.get_selected_item().get_string())
             sender.set_label('关闭')
         else:
+            engravtor.controller.disconnect()
             sender.set_label('连接')
 
     @Gtk.Template.Callback()
@@ -273,12 +269,29 @@ class Panel (Gtk.Paned):
         item = listviewitem.get_item()
         engravtor = item.obj
 
+        import tempfile
+        temp_file = tempfile.NamedTemporaryFile(delete=False); temp_file.close()
+        svg_filepath = temp_file.name + '.svg'
+        gc_filepath = temp_file.name + '.gc'
+        
+        width,heigh = engravtor.export_svg(svg_filepath)
+        if self.export_gcode_from_svg(svg_filepath,gc_filepath,width,heigh):
+            return
 
-        # engravtor.run()
+        with open(gc_filepath,'r') as f:
+            gcode = f.read()
+            self.textview_gcode.get_buffer().set_text(gcode)
+
+        buffer = self.textview_gcode.get_buffer()
+        start,end = buffer.get_bounds()
+        gcode = buffer.get_text(start,end,True)
+        engravtor.run(gcode)
 
     def export_gcode_from_svg(self,svg_filepath,gc_filepath,width,height):
         from svg2gcode.__main__ import svg2gcode
+        from svg2gcode.svg_to_gcode import css_color
         import argparse
+        import re
 
         # defaults
         cfg = {
@@ -332,7 +345,7 @@ class Panel (Gtk.Paned):
         parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + '3.3.6', help="show version number and exit")
 
         # 使用临时文件作为输出路径
-        args = parser.parse_args([svg_filepath, gc_filepath, '--pixelsize','1','--origin',str(-width/2),str(-height/2)])
+        args = parser.parse_args([svg_filepath, gc_filepath,'--imagepower','10','--imagespeed','100', '--pixelsize','1','--origin',str(-width/2),str(-height/2)])
         
         
         if args.color_coded != "":

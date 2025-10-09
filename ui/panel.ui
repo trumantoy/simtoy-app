@@ -102,10 +102,7 @@
                                                                 <property name="model">
                                                                     <object class="GtkStringList">
                                                                         <items>
-                                                                            <item>COM1</item>
-                                                                            <item>COM2</item>
                                                                             <item>COM3</item>
-                                                                            <item>COM4</item>
                                                                         </items>
                                                                     </object>
                                                                 </property>
@@ -204,38 +201,7 @@
                                                 <property name="selection-mode">none</property>
                                                 <property name="show-separators">1</property>
                                                 <property name="margin-top">10</property>
-                                                <child>
-                                                    <object class="GtkBox">
-                                                        <child>
-                                                            <object class="GtkLabel">
-                                                                <property name="label">房屋色</property>
-                                                                <property name="use-markup">True</property>
-                                                                <property name="xalign">0.0</property>
-                                                            </object>
-                                                        </child>
-                                                        <child>
-                                                            <object class="GtkColorDialogButton" id="roomcolor">
-                                                                <signal name="notify::rgba" handler="roomcolor_activated" swapped="no"/>
-                                                            </object>
-                                                        </child>
-
-                                                        <child>
-                                                            <object class="GtkLabel" >
-                                                                <property name="label">屋顶色</property>
-                                                                <property name="use-markup">True</property>
-                                                                <property name="xalign">0.0</property>
-                                                            </object>
-                                                        </child>
-                                                        <child>
-                                                            <object class="GtkColorDialogButton" id="roofcolor">
-                                                                <signal name="notify::rgba" handler="roofcolor_activated" swapped="no"/>
-                                                            </object>
-                                                        </child>
-
-                                                        
-                                                    
-                                                    </object>
-                                                </child>
+                                         
 
                                             </object>
                                         </child>

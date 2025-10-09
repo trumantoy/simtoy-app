@@ -10,108 +10,6 @@ import pylinalg as la
 from importlib.resources import files
 import numpy as np
 
-import serial
-import time
-
-class GrblController:
-    def __init__(self, port, baudrate=115200, timeout=1):
-        """初始化Grbl控制器连接"""
-        self.serial = None
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.connected = False
-        
-    def connect(self):
-        """连接到Grbl控制器"""
-        try:
-            self.serial = serial.Serial(
-                port=self.port,
-                baudrate=self.baudrate,
-                timeout=self.timeout
-            )
-            # 等待Grbl启动
-            time.sleep(2)
-            # 发送初始化命令
-            self.serial.write(b'\r\n\r\n')
-            time.sleep(2)
-            # 清空缓冲区
-            self.serial.flushInput()
-            self.connected = True
-            print(f"成功连接到Grbl控制器: {self.port}")
-            return True
-        except Exception as e:
-            print(f"连接失败: {str(e)}")
-            return False
-    
-    def disconnect(self):
-        """断开与Grbl控制器的连接"""
-        if self.connected and self.serial:
-            self.serial.close()
-            self.connected = False
-            print("已断开与Grbl控制器的连接")
-    
-    def send_command(self, command):
-        """发送G代码命令到Grbl控制器"""
-        if not self.connected:
-            print("未连接到控制器，请先连接")
-            return False
-            
-        try:
-            # 添加换行符作为命令结束标志
-            full_command = command + '\n'
-            self.serial.write(full_command.encode('utf-8'))
-            # 等待响应
-            response = self.serial.readline().decode('utf-8').strip()
-            
-            # 检查响应是否为OK或包含错误信息
-            if response == 'ok':
-                print(f"命令发送成功: {command}")
-                return True
-            elif response.startswith('error'):
-                print(f"命令执行错误: {response} - 命令: {command}")
-                return False
-            else:
-                # 某些命令可能返回其他信息
-                print(f"命令响应: {response} - 命令: {command}")
-                return True
-        except Exception as e:
-            print(f"发送命令出错: {str(e)}")
-            return False
-    
-    def spindle_on_clockwise(self, speed=None):
-        """
-        主轴顺时针旋转 (M3指令)
-        speed: 转速，单位通常为RPM，如1000表示1000RPM
-        """
-        if speed:
-            # M3 Sxxx 格式，S后面跟转速
-            command = f"M3 S{speed}"
-        else:
-            # 仅启动主轴，不指定转速
-            command = "M3"
-        
-        return self.send_command(command)
-    
-    def spindle_off(self):
-        """主轴停止 (M5指令)"""
-        return self.send_command("M5")
-    
-    def get_status(self):
-        """获取Grbl状态信息"""
-        if not self.connected:
-            print("未连接到控制器，请先连接")
-            return None
-            
-        try:
-            # 发送状态请求
-            self.serial.write(b'?')
-            response = self.serial.readline().decode('utf-8').strip()
-            return response
-        except Exception as e:
-            print(f"获取状态出错: {str(e)}")
-            return None
-
 
 class OriginMaterial(Material):
     """最简点材质：统一颜色与尺寸（screen-space）。"""
@@ -752,8 +650,7 @@ class Engravtor(gfx.WorldObject):
         # self.controller.add_camera(persp_camera)
         # self.controller.add_camera(ortho_camera)
 
-        # self.controller = GrblController()
-        # self.controller.connect()
+        self.controller = GrblController()
         
         geom = gfx.sphere_geometry(radius=0.0001)
         material = gfx.MeshBasicMaterial(color=(1, 0, 0, 1),flat_shading=True)
@@ -793,7 +690,6 @@ class Engravtor(gfx.WorldObject):
         self.target_area.add(target)
     
         target.add_event_handler(lambda e: e.button == 3 and self.unselect_all(self.target_area),'pointer_down')
- 
 
     def unselect_all(self,parent : gfx.WorldObject):
         for obj in parent.children:
@@ -851,11 +747,10 @@ class Engravtor(gfx.WorldObject):
                     cr.select_font_face(obj.family)
                     ascent, descent, font_height, max_x_advance, max_y_advance = cr.font_extents()
                     text_extents = cr.text_extents(obj.text)
-
                     xoffset = 0.
                     yoffset = 0.
                     cr.move_to(obj.local.x * 1000 - text_extents.width / 2 + xoffset, 
-                                -(obj.local.y * 1000 + descent - text_extents.height / 2 + yoffset))
+                                -(obj.local.y * 1000 + descent - text_extents.height / 2 + yoffset) )
                     cr.text_path(obj.text)
                     cr.stroke()
                     
@@ -872,7 +767,6 @@ class Engravtor(gfx.WorldObject):
         return width,height
     
     def excute(self,line : str):
-        print(line)
         commands = line.split(' ')
         for cmd in commands:
             if cmd == 'G0':
@@ -904,19 +798,19 @@ class Engravtor(gfx.WorldObject):
             else:
                 pass
         
-        if self.cutting:
-            pos = (self.focus.local.x,self.focus.local.y,0)
-            geometry = gfx.Geometry(positions=np.concatenate([self.line.geometry.positions.data,[pos]],dtype=np.float32))
-            self.line.geometry = geometry
+        if not self.cutting: return 
+        pos = (self.focus.local.x,self.focus.local.y,0)
+        geometry = gfx.Geometry(positions=np.concatenate([self.line.geometry.positions.data,[pos]],dtype=np.float32))
+        self.line.geometry = geometry
 
-            origin = self.laser_aperture.local.position[:]
-            direction = self.focus.local.position[:]
-            self.laser.geometry = gfx.Geometry(positions=[origin,direction])
+        origin = self.laser_aperture.local.position[:]
+        direction = self.focus.local.position[:]
+        self.laser.geometry = gfx.Geometry(positions=[origin,direction])
 
-            if self.line.geometry.positions.data.shape[0] == 2:
-                aabb = self.target.get_geometry_bounding_box()
-                self.line.local.z = (aabb[1][2] - aabb[0][2]) / 2
-                self.target.add(self.line)
+        if self.line.geometry.positions.data.shape[0] == 2:
+            aabb = self.target.get_geometry_bounding_box()
+            self.line.local.z = (aabb[1][2] - aabb[0][2]) / 2
+            self.target.add(self.line)
 
     def preview(self,gcode):
         self.gcode = gcode.splitlines()
@@ -930,11 +824,112 @@ class Engravtor(gfx.WorldObject):
                 i+=1
 
             self.excute(line)
-
             self.steps.append(lambda: fun(i+1))
-
         self.steps.append(lambda: fun(0))
 
     def run(self,gcode):
-        return
+        self.controller.set_axes_invert()
+        self.controller.set_process_params()
+        self.gcode = gcode.splitlines()
+        self.gcode = [line.strip() for line in self.gcode if line and not line.startswith(';')]
 
+        def fun(i):
+            if i == len(self.gcode): return
+
+            lines = self.gcode[i:i+100]
+            self.controller.excute(lines)
+
+            self.steps.append(lambda: fun(i+len(lines)))
+        self.steps.append(lambda: fun(0))
+    
+
+import serial
+
+class GrblController:
+    def __init__(self):
+        """初始化Grbl控制器连接"""
+        self.serial = None
+        
+    def connect(self,port):
+        """连接到Grbl控制器"""
+        try:
+            # 初始化串口（根据实际设备修改参数）
+            self.serial = serial.Serial(port=port,baudrate=9600,timeout=1)
+
+            # 检查串口是否打开
+            if not self.serial.is_open:
+                self.serial = None
+                print("串口打开失败") 
+                return False
+            
+        except Exception as e:
+            self.serial = None
+            print(f"连接失败: {str(e)}")
+            return False
+
+        print(f"串口 {self.serial.name} 已打开")
+        return True
+    
+    def disconnect(self):
+        """断开与Grbl控制器的连接"""
+        if self.serial:
+            self.serial.close()
+            print("已断开与Grbl控制器的连接")
+
+
+    def set_axes_invert(self):
+        """设置轴 invert"""
+        req = f'$240P2P6P5\n'.encode()
+        print(req)
+        self.serial.write(req)
+        res = self.serial.readline()
+        print(res)
+
+    def set_process_params(self):
+        """
+        T：参数识别 F:速度 S:功率 C:频率 D:占空比 E:开光延时
+        H:关光延时 U:跳转延时
+        单位F:mm/s S[0-100]% Cus Dus EHUms
+        1kHz占空比50%  C：1000 D：500
+        """
+
+        req = f'T0 C22\n'.encode()
+        print(req)
+        self.serial.write(req)
+        res = self.serial.readline()
+        print(res)
+    
+    def excute(self, lines):
+        queue_size = self.get_queue_size()
+        print('queue_size',queue_size)   
+
+        for line in lines:
+            req = f'{line}\n'.encode()
+            self.serial.write(req)
+        
+        for _ in range(len(lines)):
+            self.serial.readline()
+    
+    def get_queue_size(self):
+        """获取Grbl接收缓存队列余量"""
+        req = '%\n'.encode()
+        print(req)
+        self.serial.write(req)
+        res = self.serial.readline()
+        print(res)
+        return int(res.decode().split(':')[1])
+    
+    def get_status(self):
+        """获取Grbl状态信息"""
+        if not self.connected:
+            print("未连接到控制器，请先连接")
+            return None
+            
+        try:
+            # 发送状态请求
+            self.serial.write(b'?')
+            response = self.serial.readline().decode('utf-8').strip()
+            return response
+        except Exception as e:
+            print(f"获取状态出错: {str(e)}")
+            return None

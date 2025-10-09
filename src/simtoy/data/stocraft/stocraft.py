@@ -101,10 +101,15 @@ def feature(code,date,interval_seconds = 5):
     return 特征
 
 
-def measure(deals,ranks,info,freq=10):
+def measure(code,date,freq=10):
     df = pd.DataFrame(columns=['时间','买手','卖手','买额','卖额','涨跌','价格'])
-    deals = deals[(deals['买卖盘性质'] != '中性盘')].copy()
 
+    交易 = pd.read_csv(transaction_filepath)
+    信息 = pd.read_csv(info_filepath)
+    人气 = pd.read_csv(rank_filepath)
+
+    deals = deals[(deals['买卖盘性质'] != '中性盘')].copy()
+    
     if 0 == deals.shape[0]: return df
     deals : pd.DataFrame
 
@@ -161,8 +166,8 @@ def measure(deals,ranks,info,freq=10):
     return df
 
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
-    codes,date,days,cap,strategy = args
-    up_df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分'])
+    codes,date,days,cap = args
+    df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分'])
 
     stocks = get_stock_spot()
     
@@ -175,11 +180,13 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     
     from matplotlib import pyplot as plt
     for date in dates:
+        # worker_req.qsize()
         stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date)),axis=1)
     dfs = dict()
 
     for _ in range(stocks.shape[0]*len(dates)):
         fun,code,date,feature_df = worker_res.get()
+        
         feature_df : pd.DataFrame
         feature_df.insert(0,'时间', date + ' ' + feature_df['起时'])
         if code not in dfs:
@@ -187,17 +194,14 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
         else:
             dfs[code] = pd.concat([dfs[code], feature_df], ignore_index=True)
 
-    if strategy == '触底反弹':
-        feature_df = dfs['002067']
-        bins = [0, 100, 500, 1000, 1000000]
-        labels = ['小散', '牛散', '游资', '主力']
-        feature_df['资金类别'] = pd.cut(feature_df['代价'], bins=bins, labels=labels)
-        # distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','均价':'mean',}).round(2)
-        
-
-        pass       
+    feature_df = dfs['002067']
+    bins = [0, 100, 500, 1000, 1000000]
+    labels = ['小散', '牛散', '游资', '主力']
+    feature_df['资金类别'] = pd.cut(feature_df['代价'], bins=bins, labels=labels)
+    # distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','均价':'mean',}).round(2)
 
     score = 0
+    
 
 def play(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
     start = datetime.strptime(date,'%y%m%d')
