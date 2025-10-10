@@ -26,19 +26,14 @@ import glob
 db_dir = 'db'
 
 def feature(code,date,info,interval_seconds = 5):
-    特征 = pd.DataFrame(columns=['起时','终时','起价','终价','代价','涨幅','均价'])
+    df = pd.DataFrame(columns=['起时','终时','起价','终价','代价','涨幅','均价'])
     
     transaction_filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-    # info_filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
-    # rank_filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
 
     if not os.path.exists(transaction_filepath):
-        return 特征
+        return df
 
     交易 = pd.read_csv(transaction_filepath)
-    # 信息 = pd.read_csv(info_filepath)
-    # 人气 = pd.read_csv(rank_filepath)
-
     基价 = info['昨收']
     起价 = 基价
 
@@ -66,12 +61,12 @@ def feature(code,date,info,interval_seconds = 5):
                 买卖盘性质 = 性质
 
             if time_diff.total_seconds() > interval_seconds or (性质 != 买卖盘性质 and 成交价 != 终价):
-                当前位置 = len(特征.index)
+                当前位置 = len(df.index)
                 涨幅 = round((终价 - 起价) / 基价 * 100,2)
                 均价 = round((终价 + 起价) / 2,2)
 
-                if 特征.shape[0]:
-                    最近 = 特征.loc[当前位置-1]
+                if df.shape[0]:
+                    最近 = df.loc[当前位置-1]
                     最近涨幅 = 最近['涨幅']
                     time1 = datetime.strptime(最近['终时'], "%H:%M:%S")
                     time2 = datetime.strptime(起时, "%H:%M:%S")
@@ -87,7 +82,7 @@ def feature(code,date,info,interval_seconds = 5):
                             代价 = 最近['代价'] + 代价
                             当前位置 = 当前位置 - 1
 
-                特征.loc[当前位置] = [起时,终时,起价,终价,代价,涨幅,均价]
+                df.loc[当前位置] = [起时,终时,起价,终价,代价,涨幅,均价]
 
                 涨幅 = 0
                 代价 = 0
@@ -98,7 +93,7 @@ def feature(code,date,info,interval_seconds = 5):
             终时 = 时间
             终价 = 成交价
             当前 = 起时,终时,起价,终价,代价,涨幅,均价,买卖盘性质
-    return 特征
+    return df
 
 
 def measure(code,date,freq=10):
@@ -179,7 +174,6 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
         stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()    
         stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)),axis=1)
 
-    df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分'])
     dfs = dict()
           
     for _ in range(stocks.shape[0]*len(dates)):
@@ -187,20 +181,33 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
         
         feature_df : pd.DataFrame
         feature_df.insert(0,'时间', date + ' ' + feature_df['起时'])
+        feature_df.insert(0,'日期', date)
         if code not in dfs:
-            dfs[code] = feature_df
+            dfs[code] = [feature_df]
         else:
-            dfs[code] = pd.concat([dfs[code], feature_df], ignore_index=True)
+            dfs[code].append(feature_df)
 
-    feature_df = dfs['002067']
-    bins = [0, 100, 500, 1000, 1000000]
-    labels = ['小散', '牛散', '游资', '主力']
-    feature_df['资金类别'] = pd.cut(feature_df['代价'], bins=bins, labels=labels)
-    # distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','均价':'mean',}).round(2)
-    
-    score = 0
-    
+    df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分','态势'])
+    for code,feature_dfs in dfs.items():
+        score = 0
+        feature_df = pd.concat(feature_dfs, ignore_index=True)
+        feature_df['资金类别'] = pd.cut(feature_df['代价'], bins=[0, 100, 500, 1000, 1000000], labels=['小散', '牛散', '游资', '主力'])
+        # distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','均价':'mean',}).round(2)
 
+        strategy = ''
+
+        # 下套反弹策略
+        df.loc[len(df.index)] = (date,code,feature_df['名称'].iloc[0],feature_df['流通市值'].iloc[0],feature_df['行业'].iloc[0],feature_df['涨幅'].iloc[-1],score,'下套反弹-单日')
+
+        # 趋势上涨策略
+        df.loc[len(df.index)] = (date,code,feature_df['名称'].iloc[0],feature_df['流通市值'].iloc[0],feature_df['行业'].iloc[0],feature_df['涨幅'].iloc[-1],score,'趋势上涨-单日')
+
+        # 超-下套反弹策略
+        df.loc[len(df.index)] = (date,code,feature_df['名称'].iloc[0],feature_df['流通市值'].iloc[0],feature_df['行业'].iloc[0],feature_df['涨幅'].iloc[-1],score,'超-下套反弹-单日')
+
+        # 支撑位策略
+
+    
 def play(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
     start = datetime.strptime(date,'%y%m%d')
     end = start - timedelta(days)
