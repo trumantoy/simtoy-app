@@ -26,29 +26,35 @@ import glob
 db_dir = 'db'
 
 def feature(code,date,info,interval_seconds = 5):
-    df = pd.DataFrame(columns=['起时','终时','起价','终价','代价','涨幅','均价'])
-    
     transaction_filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-
     if not os.path.exists(transaction_filepath):
-        return df
+        return pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','涨幅'])
 
     交易 = pd.read_csv(transaction_filepath)
     基价 = info['昨收']
     起价 = 基价
 
+    时间,成交价,手数,买卖盘性质 = 交易.iloc[0]['时间'],交易.iloc[0]['成交价'],交易.iloc[0]['手数'],交易.iloc[0]['买卖盘性质']
+    起时 = 终时 = 时间
+    终价 = 成交价
+    总价 = round((成交价 * 手数 * 100) / 1e4,1)
+    涨幅 = round((成交价 - 起价) / 基价 * 100,2)
+    均价 = round((终价 - 起价) / 2 + 起价,2)
+    当前 = 起时,终时,起价,终价,总价,均价,涨幅,买卖盘性质
+
+    rows = list()
     for i,r in 交易.iterrows():
         时间,成交价,手数,买卖盘性质 = r['时间'],r['成交价'],r['手数'],r['买卖盘性质']
         if 买卖盘性质 == '中性盘':
             continue
-
+        
         if 时间.startswith('09:25'):
             起时 = 终时 = 时间
             终价 = 成交价
-            代价 = round((成交价 * 手数 * 100) / 1e4,1)
+            总价 = round((成交价 * 手数 * 100) / 1e4,1)
             涨幅 = round((成交价 - 起价) / 基价 * 100,2)
             均价 = round((终价 - 起价) / 2 + 起价,2)
-            当前 = 起时,终时,起价,终价,代价,涨幅,均价,买卖盘性质
+            当前 = 起时,终时,起价,终价,总价,均价,涨幅,买卖盘性质
         else:
             _,终时,_,终价,_,_,_,性质 = 当前
 
@@ -61,12 +67,11 @@ def feature(code,date,info,interval_seconds = 5):
                 买卖盘性质 = 性质
 
             if time_diff.total_seconds() > interval_seconds or (性质 != 买卖盘性质 and 成交价 != 终价):
-                当前位置 = len(df.index)
                 涨幅 = round((终价 - 起价) / 基价 * 100,2)
                 均价 = round((终价 + 起价) / 2,2)
 
-                if df.shape[0]:
-                    最近 = df.loc[当前位置-1]
+                if len(rows):
+                    最近 = rows[-1]
                     最近涨幅 = 最近['涨幅']
                     time1 = datetime.strptime(最近['终时'], "%H:%M:%S")
                     time2 = datetime.strptime(起时, "%H:%M:%S")
@@ -79,21 +84,22 @@ def feature(code,date,info,interval_seconds = 5):
                         
                             起时 = 最近['起时']
                             起价 = 最近['起价']
-                            代价 = 最近['代价'] + 代价
-                            当前位置 = 当前位置 - 1
+                            总价 = 最近['总价'] + 总价
+                            涨幅 = 最近['涨幅'] + 涨幅
+                            rows.pop()
 
-                df.loc[当前位置] = [起时,终时,起价,终价,代价,涨幅,均价]
-
+                rows.append(pd.Series({'起时':起时,'终时':终时,'起价':起价,'终价':终价,'总价':总价,'均价':均价,'涨幅':round(涨幅,2),'性质':性质}))
                 涨幅 = 0
-                代价 = 0
+                总价 = 0
                 起时 = 时间
                 起价 = 终价
 
-            代价 += round((成交价 * 手数 * 100) / 1e4,1)
+            总价 += (成交价 * 手数 * 100)
             终时 = 时间
             终价 = 成交价
-            当前 = 起时,终时,起价,终价,代价,涨幅,均价,买卖盘性质
-    return df
+            当前 = 起时,终时,起价,终价,总价,均价,涨幅,买卖盘性质
+    
+    return pd.DataFrame(rows,columns=['起时','终时','起价','终价','总价','均价','涨幅','性质'])
 
 
 def measure(code,date,freq=10):
@@ -162,51 +168,65 @@ def measure(code,date,freq=10):
 
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     codes,date,days,cap = args
+
+    from matplotlib import pyplot as plt
+    stocks = pd.read_csv(os.path.join(db_dir,f'0-{date}-行情.csv'),dtype={'代码':str})
+    stocks_seleted = stocks[stocks['代码'].isin(codes)]
+    stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
+    stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()    
+
     end = datetime.strptime(date,'%Y%m%d')
     start = end - timedelta(days)
-    dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
-    
-    from matplotlib import pyplot as plt
-    for date in dates:
-        stocks = os.path.join(db_dir,f'0-{date}-行情.csv')
-        stocks_seleted = stocks[stocks['代码'].isin(codes)]
-        stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
-        stocks = pd.concat([stocks, stocks_seleted], ignore_index=True).drop_duplicates()    
-        stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)),axis=1)
+    dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
+
+    stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)), axis=1)
 
     dfs = dict()
-          
-    for _ in range(stocks.shape[0]*len(dates)):
+    for _ in range(stocks.shape[0]):
         fun,code,date,feature_df = worker_res.get()
-        
         feature_df : pd.DataFrame
         feature_df.insert(0,'时间', date + ' ' + feature_df['起时'])
-        feature_df.insert(0,'日期', date)
-        if code not in dfs:
-            dfs[code] = [feature_df]
-        else:
+        
+        if code in dfs:
             dfs[code].append(feature_df)
+        else:
+            dfs[code] = [feature_df]
+            
+    df = pd.DataFrame(columns=['代码','名称','市值','涨幅','评分','态势','参数','权重'])    
+    for i,r in stocks.iterrows():
+        feature_df = pd.concat(dfs[r['代码']], ignore_index=True)
+        feature_df['资金规模'] = pd.cut(feature_df['总价'], bins=[0, 100, 500, 1000, 1000000], labels=['小散', '牛散', '游资', '主力'])
+        # feature_df['_时间'] = pd.to_datetime(feature_df['时间'])
+        # feature_df = feature_df.set_index('_时间').sort_index()
+        # 多方分布 = feature_df.groupby('资金规模',observed=True).count()
+        
+        当日终价 = feature_df.tail(1)['终价'].item()
+        套牢资金 = feature_df[(feature_df['总价'] > 500 * 1e4) & (feature_df['终价'] > 当日终价)]['总价'].sum().item()
+        买方 = feature_df[feature_df['涨幅'] > 0]
+        卖方 = feature_df[feature_df['涨幅'] < 0] 
+        买方资金 = 买方['总价'].sum().item()
+        卖方资金 = 卖方['总价'].sum().item()
+        涨代价 = (买方['总价'] / 买方['涨幅']).median().item()
+        跌代价 = (卖方['总价'] / -卖方['涨幅']).median().item()
 
-    df = pd.DataFrame(columns=['日期','代码','名称','市值','行业','涨幅','评分','态势'])
-    for code,feature_dfs in dfs.items():
-        score = 0
-        feature_df = pd.concat(feature_dfs, ignore_index=True)
-        feature_df['资金类别'] = pd.cut(feature_df['代价'], bins=[0, 100, 500, 1000, 1000000], labels=['小散', '牛散', '游资', '主力'])
-        # distribution = feature_df.groupby('代价区间',observed=True).agg({'代价':'sum','涨幅':'sum','均价':'mean',}).round(2)
+        bais = 0.0
+        涨停资金 = 10 * 1e8
+        基准代价 = 1000 * 1e4
 
-        strategy = ''
-
-        # 下套反弹策略
-        df.loc[len(df.index)] = (date,code,feature_df['名称'].iloc[0],feature_df['流通市值'].iloc[0],feature_df['行业'].iloc[0],feature_df['涨幅'].iloc[-1],score,'下套反弹-单日')
-
-        # 趋势上涨策略
-        df.loc[len(df.index)] = (date,code,feature_df['名称'].iloc[0],feature_df['流通市值'].iloc[0],feature_df['行业'].iloc[0],feature_df['涨幅'].iloc[-1],score,'趋势上涨-单日')
-
-        # 超-下套反弹策略
-        df.loc[len(df.index)] = (date,code,feature_df['名称'].iloc[0],feature_df['流通市值'].iloc[0],feature_df['行业'].iloc[0],feature_df['涨幅'].iloc[-1],score,'超-下套反弹-单日')
+        a = (
+            round(套牢资金 / 涨停资金,2),
+            round((1 - 卖方资金 / 买方资金) if 买方资金 else -1,2),
+            round(1 - 涨代价 / 跌代价,2)
+        )
+        w = (0.1,0.1,0.1)
+        score = bais + a[0] * w[0] + a[1] * w[1] + a[2] * w[2]
 
         # 支撑位策略
-
+        # 趋势上涨策略
+        # 下套反弹策略
+        df.loc[len(df.index)] = (r['代码'],r['名称'],round(r['流通市值'] / 1e8,2),r['涨跌幅'],round(score,2),'下套反弹',str(a),str(w))
+        # 超-下套反弹策略
+    return df
     
 def play(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
     start = datetime.strptime(date,'%y%m%d')
@@ -287,7 +307,7 @@ def worker(id,req : mp.Queue,res : mp.Queue):
         code = args[1]
         date = args[2]
         info = args[3]
-        val = eval(f'{fun}("{code}","{date}",{info})')
+        val = eval(f'{fun}(code,date,info)')
         res.put((fun,code,date,val))
 
 def data_syncing_of_stock_intraday(worker_req : mp.Queue,worker_res : mp.Queue):
@@ -342,7 +362,7 @@ if __name__ == '__main__':
         parser.add_argument('--name',type=str,default='')
         parser.add_argument('--code',type=str,default='[]')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
-        parser.add_argument('--days',type=int,default=0)
+        parser.add_argument('--days',type=int,default=1)
         parser.add_argument('--cap',type=str,default='(50,150)')
         
         args = parser.parse_args(cmd)
@@ -351,7 +371,11 @@ if __name__ == '__main__':
             threading.Thread(target=data_syncing_of_stock_intraday,name='股票数据同步',args=[worker_req,worker_res],daemon=True).start()
         elif args.mode == 'up':
             codes = args.code.split(',')
-            up(worker_req,worker_res,codes,args.date,args.days,eval(args.cap),'触底反弹')
+            df = up(worker_req,worker_res,codes,args.date,args.days,eval(args.cap))
+            df = df.sort_values(by='评分').reset_index(drop=True)
+
+            print(df.to_string())
+            print(df[df['代码'].isin(codes)].to_string())
         elif args.mode == 'play':
             codes = args.code.split(',')
             play(worker_req,worker_res,codes,args.date,args.days)
