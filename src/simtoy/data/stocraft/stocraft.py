@@ -166,6 +166,10 @@ def measure(code,date,freq=10):
     
     return df
 
+def evaluate(code,date,info):
+
+    pass
+
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     codes,date,days,cap = args
 
@@ -179,7 +183,7 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
 
-    stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)), axis=1)
+    stocks.apply(lambda r: worker_req.put(('evaluate',r['代码'],date,r)), axis=1)
 
     dfs = dict()
     for _ in range(stocks.shape[0]):
@@ -199,15 +203,15 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
         # feature_df['_时间'] = pd.to_datetime(feature_df['时间'])
         # feature_df = feature_df.set_index('_时间').sort_index()
         # 多方分布 = feature_df.groupby('资金规模',observed=True).count()
-        
+        if feature_df.empty: continue
         当日终价 = feature_df.tail(1)['终价'].item()
-        套牢资金 = feature_df[(feature_df['总价'] > 500 * 1e4) & (feature_df['终价'] > 当日终价)]['总价'].sum().item()
+        套牢资金 = feature_df[(feature_df['总价'] > 100 * 1e4) & (feature_df['终价'] > 当日终价)]['总价'].sum().item()
         买方 = feature_df[feature_df['涨幅'] > 0]
         卖方 = feature_df[feature_df['涨幅'] < 0] 
         买方资金 = 买方['总价'].sum().item()
         卖方资金 = 卖方['总价'].sum().item()
-        涨代价 = (买方['总价'] / 买方['涨幅']).median().item()
-        跌代价 = (卖方['总价'] / -卖方['涨幅']).median().item()
+        涨代价 = float((买方['总价'] / 买方['涨幅']).median() / 1e4)
+        跌代价 = float((卖方['总价'] / -卖方['涨幅']).median() / 1e4)
 
         bais = 0.0
         涨停资金 = 10 * 1e8
@@ -216,7 +220,7 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
         a = (
             round(套牢资金 / 涨停资金,2),
             round((1 - 卖方资金 / 买方资金) if 买方资金 else -1,2),
-            round(1 - 涨代价 / 跌代价,2)
+            round((1 - 涨代价 / 跌代价) if not np.isnan(涨代价) and not np.isnan(跌代价) else -1,2),
         )
         w = (0.1,0.1,0.1)
         score = bais + a[0] * w[0] + a[1] * w[1] + a[2] * w[2]
@@ -284,6 +288,7 @@ def get_stock_intraday(code,date):
         if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
             deals = ak.stock_intraday_em(symbol=code)
             deals.to_csv(filepath,index=False)
+            time.sleep(2)
             
         # filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
         # if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
@@ -294,6 +299,7 @@ def get_stock_intraday(code,date):
         #     ranks.to_csv(filepath,index=False)
         #     time.sleep(2)
     except (ConnectionError, ReadTimeout, ValueError, ConnectionResetError,requests.exceptions.ChunkedEncodingError,requests.exceptions.ConnectionError):
+        time.sleep(5)
         return False
     except:
         return True
@@ -310,7 +316,7 @@ def worker(id,req : mp.Queue,res : mp.Queue):
         val = eval(f'{fun}(code,date,info)')
         res.put((fun,code,date,val))
 
-def data_syncing_of_stock_intraday(worker_req : mp.Queue,worker_res : mp.Queue):
+def data_syncing_of_stock_intraday(log : list):
     while True:
         os.makedirs(db_dir,exist_ok=True)
 
@@ -332,7 +338,9 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,worker_res : mp.Queue):
         df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
         if now.weekday() < 5 and not df.empty: 
             for i,r in stocks.iterrows():
-                while not get_stock_intraday(r['代码'],date): time.sleep(1)
+                while not get_stock_intraday(r['代码'],date): 
+                    log.append(f'网络异常，等待重试 {r["代码"]}-{r["名称"]}')
+                log.append(f'{i}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
 
         while datetime.now() < h24:
             time.sleep(60)
@@ -342,6 +350,7 @@ if __name__ == '__main__':
     shared = mp.Manager()
     worker_req = shared.Queue()
     worker_res = shared.Queue()
+    log = shared.list()
 
     for i in range(min(4,os.cpu_count())):
         process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req,worker_res],daemon=True)
@@ -368,7 +377,8 @@ if __name__ == '__main__':
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':
-            threading.Thread(target=data_syncing_of_stock_intraday,name='股票数据同步',args=[worker_req,worker_res],daemon=True).start()
+            threading.Thread(target=data_syncing_of_stock_intraday,args=[log],name='股票数据同步',daemon=True).start()
+
         elif args.mode == 'up':
             codes = args.code.split(',')
             df = up(worker_req,worker_res,codes,args.date,args.days,eval(args.cap))
@@ -380,6 +390,7 @@ if __name__ == '__main__':
             codes = args.code.split(',')
             play(worker_req,worker_res,codes,args.date,args.days)
         else:
-            print('req',worker_req.qsize(),'res',worker_res.qsize())
+            while len(log):
+                print(log.pop(0))
         
         print('-')
