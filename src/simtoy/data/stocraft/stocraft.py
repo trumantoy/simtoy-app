@@ -1,5 +1,7 @@
 import multiprocessing as mp
 import akshare as ak
+import tushare as ts
+ts.set_token('da2ac34cc7305cf5880976df692869b0a657de1595e71f6d8443b84c')
 import pandas as pd
 import numpy as np
 import time
@@ -102,23 +104,89 @@ def feature(code,date,info,interval_seconds = 5):
     return pd.DataFrame(rows,columns=['起时','终时','起价','终价','总价','均价','涨幅','性质'])
 
 
-def measure(code,date,freq=10):
-    df = pd.DataFrame(columns=['时间','买手','卖手','买额','卖额','涨跌','价格'])
-
-    交易 = pd.read_csv(transaction_filepath)
-    信息 = pd.read_csv(info_filepath)
-    人气 = pd.read_csv(rank_filepath)
-
-    deals = deals[(deals['买卖盘性质'] != '中性盘')].copy()
+# def measure(code,date,info,freq=10):
+#     df = pd.DataFrame(columns=['时间','买手','卖手','买额','卖额','涨跌','价格'])
     
-    if 0 == deals.shape[0]: return df
-    deals : pd.DataFrame
+#     transaction_filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+#     if not os.path.exists(transaction_filepath):
+#         return pd.DataFrame(columns=['起时','终时','起价','终价','总价','均价','涨幅'])
 
-    deals['金额'] = deals['成交价'] * deals['手数'] * 100
-    deals['_时间'] = pd.to_datetime(deals['时间'])
-    deals.set_index('_时间',inplace=True)
-    date = info[info['item'] == '日期'].iloc[0]['value']
-    价格 = 昨收价 = float(info[info['item'] == '昨收'].iloc[0]['value'])
+#     交易 = pd.read_csv(transaction_filepath)
+#     基价 = info['昨收']
+#     起价 = 基价
+
+#     交易 = 交易[(交易['买卖盘性质'] != '中性盘')].copy()
+    
+#     if 0 == 交易.shape[0]: return df
+#     交易 : pd.DataFrame
+
+#     交易['金额'] = 交易['成交价'] * 交易['手数'] * 100
+#     交易['_时间'] = pd.to_datetime(交易['时间'])
+#     交易.set_index('_时间',inplace=True)
+#     date = info[info['item'] == '日期'].iloc[0]['value']
+#     价格 = 昨收价 = float(info[info['item'] == '昨收'].iloc[0]['value'])
+#     涨跌 = 0
+#     window_size = int(60 / freq * 2.5)
+#     last_time = '9:25'
+#     a = pd.date_range(date + ' 9:25',date + ' 15:00',freq=f'{freq}s',inclusive='right')
+#     b = pd.date_range(date + ' 11:30',date + ' 13:00',freq=f'{freq}s',inclusive='right')
+#     for i,cur in enumerate(a.difference(b)):
+#         cur_time = cur.strftime('%H:%M:%S')
+#         买卖盘 = 交易.between_time(last_time,cur_time)
+#         买盘 = 买卖盘[买卖盘['买卖盘性质'] == '买盘']
+#         卖盘 = 买卖盘[买卖盘['买卖盘性质'] == '卖盘']
+#         买手 = 买盘['手数']
+#         卖手 = 卖盘['手数']
+#         买总手 = round(买手.sum(),1)
+#         卖总手 = round(卖手.sum(),1)
+#         买盘金额 = 买盘['金额']
+#         卖盘金额 = 卖盘['金额']
+#         买总额 = round(买盘金额.sum() / 1e7,1)
+#         卖总额 = round(卖盘金额.sum() / 1e7,1)
+#         成交价 = 买卖盘['成交价']        
+        
+#         if not 成交价.empty:
+#             涨跌 = round((成交价.iloc[-1] / 昨收价 - 1) * 100,2)
+#             价格 = 成交价.iloc[-1]
+        
+#         if i < window_size:
+#             df.loc[i] = (date + ' ' + cur_time,买总手/window_size,卖总手/window_size,买总额/window_size,卖总额/window_size,涨跌,价格)
+#         else:
+#             df.loc[i] = (date + ' ' + cur_time,买总手,卖总手,买总额,卖总额,涨跌,价格)
+
+#         if cur > 交易.index.values[-1]:
+#             break
+
+#         last_time = cur_time
+
+#     # def gaussian_weights(n):
+#     #     x = np.linspace(-1, 0, n)
+#     #     sigma = 0.5
+#     #     weights = np.exp(-(x ** 2) / (2 * sigma ** 2))
+#     #     return weights
+    
+#     # weights = gaussian_weights(window_size)
+#     # df[['买流量', '卖流量']] = df[['买额', '卖额']].rolling(window=window_size).apply(lambda x: np.sum(x * weights) / np.sum(weights), raw=True).round(1)
+#     # df.loc[df.index[:window_size],'买流量'] = np.linspace(0,df.loc[0,'买额'],window_size)
+#     # df.loc[df.index[:window_size],'卖流量'] = np.linspace(0,df.loc[0,'卖额'],window_size)
+    
+#     return df
+
+def measure(交易,freq=10):
+    df = pd.DataFrame(columns=['时间','买手','卖手','买额','卖额','涨跌','价格'])
+    
+    # 基价 = 信息['昨收']
+    # 起价 = 基价
+
+    交易 = 交易[(交易['买卖盘性质'] != '中性盘')].copy()
+    
+    if 0 == 交易.shape[0]: return df
+    交易 : pd.DataFrame
+
+    交易['金额'] = 交易['成交价'] * 交易['手数'] * 100
+    交易['_时间'] = pd.to_datetime(交易['时间'])
+    交易.set_index('_时间',inplace=True)
+    # 价格 = 昨收价 = 基价
     涨跌 = 0
     window_size = int(60 / freq * 2.5)
     last_time = '9:25'
@@ -126,7 +194,7 @@ def measure(code,date,freq=10):
     b = pd.date_range(date + ' 11:30',date + ' 13:00',freq=f'{freq}s',inclusive='right')
     for i,cur in enumerate(a.difference(b)):
         cur_time = cur.strftime('%H:%M:%S')
-        买卖盘 = deals.between_time(last_time,cur_time)
+        买卖盘 = 交易.between_time(last_time,cur_time)
         买盘 = 买卖盘[买卖盘['买卖盘性质'] == '买盘']
         卖盘 = 买卖盘[买卖盘['买卖盘性质'] == '卖盘']
         买手 = 买盘['手数']
@@ -148,26 +216,25 @@ def measure(code,date,freq=10):
         else:
             df.loc[i] = (date + ' ' + cur_time,买总手,卖总手,买总额,卖总额,涨跌,价格)
 
-        if cur > deals.index.values[-1]:
+        if cur > 交易.index.values[-1]:
             break
 
-        last_time = cur_time
+        # last_time = cur_time
 
-    def gaussian_weights(n):
-        x = np.linspace(-1, 0, n)
-        sigma = 0.5
-        weights = np.exp(-(x ** 2) / (2 * sigma ** 2))
-        return weights
+    # def gaussian_weights(n):
+    #     x = np.linspace(-1, 0, n)
+    #     sigma = 0.5
+    #     weights = np.exp(-(x ** 2) / (2 * sigma ** 2))
+    #     return weights
     
-    weights = gaussian_weights(window_size)
-    df[['买流量', '卖流量']] = df[['买额', '卖额']].rolling(window=window_size).apply(lambda x: np.sum(x * weights) / np.sum(weights), raw=True).round(1)
-    df.loc[df.index[:window_size],'买流量'] = np.linspace(0,df.loc[0,'买额'],window_size)
-    df.loc[df.index[:window_size],'卖流量'] = np.linspace(0,df.loc[0,'卖额'],window_size)
+    # weights = gaussian_weights(window_size)
+    # df[['买流量', '卖流量']] = df[['买额', '卖额']].rolling(window=window_size).apply(lambda x: np.sum(x * weights) / np.sum(weights), raw=True).round(1)
+    # df.loc[df.index[:window_size],'买流量'] = np.linspace(0,df.loc[0,'买额'],window_size)
+    # df.loc[df.index[:window_size],'卖流量'] = np.linspace(0,df.loc[0,'卖额'],window_size)
     
     return df
 
 def evaluate(code,date,info):
-
     pass
 
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
@@ -272,39 +339,19 @@ def get_stock_spot():
 
     return stocks
 
-def get_stock_intraday(code,date):
-    try:
-        # filepath = os.path.join(db_dir,f'{code}-{date}-信息.csv')
-        # if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-        #     info = ak.stock_individual_info_em(code,10)
-        #     time.sleep(2)
-        #     if info[info['item'] == '总市值'].iloc[0]['value'] == '-': return True
-        #     if info[info['item'] == '股票代码'].iloc[0]['value'] != code: return True
-        #     bid = ak.stock_bid_ask_em(symbol=code)
-        #     pd.concat([info,bid[20:]],ignore_index=True).to_csv(filepath,index=False)
-        #     time.sleep(2)
+def sync_stock_intraday(code,date):
+    filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
+    if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
+        df = get_stock_intraday(code)
+        df.to_csv(filepath,index=False)
 
-        filepath = os.path.join(db_dir,f'{code}-{date}-交易.csv')
-        if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-            deals = ak.stock_intraday_em(symbol=code)
-            deals.to_csv(filepath,index=False)
-            time.sleep(2)
-            
-        # filepath = os.path.join(db_dir,f'{code}-{date}-人气.csv')
-        # if not os.path.exists(filepath) or 0 == os.path.getsize(filepath):
-        #     prefix = 'SH' if code[0:2] == '60' else 'SZ' if code[0:2] == '00' else ''
-        #     ranks = ak.stock_hot_rank_detail_realtime_em(prefix + code)
-        #     ranks = ranks[50:].reset_index(drop=True)
-        #     ranks['时间'] = ranks['时间'].str[11:]
-        #     ranks.to_csv(filepath,index=False)
-        #     time.sleep(2)
-    except (ConnectionError, ReadTimeout, ValueError, ConnectionResetError,requests.exceptions.ChunkedEncodingError,requests.exceptions.ConnectionError):
-        time.sleep(5)
-        return False
-    except:
-        return True
-
-    return True
+def get_stock_intraday(code):
+    i = 1
+    while i:
+        try: df = ak.stock_intraday_em(code)
+        except: i += 1
+        else: i = 0
+    return df
 
 def worker(id,req : mp.Queue,res : mp.Queue):
     while True:
@@ -336,11 +383,11 @@ def data_syncing_of_stock_intraday(log : list):
         start = now.replace(hour=9, minute=30, second=0).strftime('%Y-%m-%d %H:%M:%S')
         end = now.replace(hour=9, minute=40, second=0).strftime('%Y-%m-%d %H:%M:%S')
         df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
+        log.clear()
         if now.weekday() < 5 and not df.empty: 
             for i,r in stocks.iterrows():
-                while not get_stock_intraday(r['代码'],date): 
-                    log.append(f'网络异常，等待重试 {r["代码"]}-{r["名称"]}')
-                log.append(f'{i}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
+                sync_stock_intraday(r['代码'],date)
+                log.append(f'{int(i)+1}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
 
         while datetime.now() < h24:
             time.sleep(60)
@@ -378,19 +425,23 @@ if __name__ == '__main__':
         
         if args.mode == 'sync':
             threading.Thread(target=data_syncing_of_stock_intraday,args=[log],name='股票数据同步',daemon=True).start()
-
         elif args.mode == 'up':
             codes = args.code.split(',')
             df = up(worker_req,worker_res,codes,args.date,args.days,eval(args.cap))
             df = df.sort_values(by='评分').reset_index(drop=True)
-
             print(df.to_string())
             print(df[df['代码'].isin(codes)].to_string())
         elif args.mode == 'play':
             codes = args.code.split(',')
             play(worker_req,worker_res,codes,args.date,args.days)
+        elif args.mode == 'measure':
+            codes = args.code.split(',')
+            for code in codes:
+                交易 = get_stock_intraday(code)
+                print(交易,flush=True)
+        elif args.mode == 'test':
+            pass
         else:
             while len(log):
                 print(log.pop(0))
-        
         print('-')
