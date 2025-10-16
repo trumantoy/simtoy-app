@@ -1,7 +1,5 @@
 import multiprocessing as mp
 import akshare as ak
-import tushare as ts
-ts.set_token('da2ac34cc7305cf5880976df692869b0a657de1595e71f6d8443b84c')
 import pandas as pd
 import numpy as np
 import time
@@ -240,7 +238,6 @@ def evaluate(code,date,info):
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     codes,date,days,cap = args
 
-    from matplotlib import pyplot as plt
     stocks = pd.read_csv(os.path.join(db_dir,f'0-{date}-行情.csv'),dtype={'代码':str})
     stocks_seleted = stocks[stocks['代码'].isin(codes)]
     stocks = stocks[(stocks['流通市值'] >= cap[0] * 1e8) & (stocks['流通市值'] <= cap[1] * 1e8)]
@@ -250,12 +247,13 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
 
-    stocks.apply(lambda r: worker_req.put(('evaluate',r['代码'],date,r)), axis=1)
+    stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)), axis=1)
 
     dfs = dict()
     for _ in range(stocks.shape[0]):
         fun,code,date,feature_df = worker_res.get()
         feature_df : pd.DataFrame
+        if feature_df is None or feature_df.empty: continue
         feature_df.insert(0,'时间', date + ' ' + feature_df['起时'])
         
         if code in dfs:
@@ -265,6 +263,7 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
             
     df = pd.DataFrame(columns=['代码','名称','市值','涨幅','评分','态势','参数','权重'])    
     for i,r in stocks.iterrows():
+        if r['代码'] not in dfs: continue
         feature_df = pd.concat(dfs[r['代码']], ignore_index=True)
         feature_df['资金规模'] = pd.cut(feature_df['总价'], bins=[0, 100, 500, 1000, 1000000], labels=['小散', '牛散', '游资', '主力'])
         # feature_df['_时间'] = pd.to_datetime(feature_df['时间'])
@@ -383,8 +382,10 @@ def data_syncing_of_stock_intraday(log : list):
         start = now.replace(hour=9, minute=30, second=0).strftime('%Y-%m-%d %H:%M:%S')
         end = now.replace(hour=9, minute=40, second=0).strftime('%Y-%m-%d %H:%M:%S')
         df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
-        log.clear()
+        log[:] = []
         if now.weekday() < 5 and not df.empty: 
+            stocks = stocks[(stocks['流通市值'] >= 80 * 1e8) & (stocks['流通市值'] <= 300 * 1e8)]
+
             for i,r in stocks.iterrows():
                 sync_stock_intraday(r['代码'],date)
                 log.append(f'{int(i)+1}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
@@ -419,7 +420,7 @@ if __name__ == '__main__':
         parser.add_argument('--code',type=str,default='[]')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
         parser.add_argument('--days',type=int,default=1)
-        parser.add_argument('--cap',type=str,default='(50,150)')
+        parser.add_argument('--cap',type=str,default='(80,300)')
         
         args = parser.parse_args(cmd)
         
