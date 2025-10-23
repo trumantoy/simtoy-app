@@ -233,6 +233,7 @@ def measure(交易,freq=10):
     return df
 
 def evaluate(code,date,info):
+    
     pass
 
 def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
@@ -356,13 +357,10 @@ def worker(id,req : mp.Queue,res : mp.Queue):
     while True:
         args = req.get()
         fun = args[0]
-        code = args[1]
-        date = args[2]
-        info = args[3]
-        val = eval(f'{fun}(code,date,info)')
-        res.put((fun,code,date,val))
+        val = eval(f'{fun}(*args[1:])')
+        if val: res.put((*args,val))
 
-def data_syncing_of_stock_intraday(log : list):
+def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
     while True:
         os.makedirs(db_dir,exist_ok=True)
 
@@ -384,10 +382,11 @@ def data_syncing_of_stock_intraday(log : list):
         df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
         log[:] = []
         if now.weekday() < 5 and not df.empty: 
-            stocks = stocks[(stocks['流通市值'] >= 80 * 1e8) & (stocks['流通市值'] <= 300 * 1e8)]
+            stocks = stocks[(stocks['流通市值'] >= 80 * 1e8) & (stocks['流通市值'] <= 300 * 1e8)].reset_index(drop=True)
 
             for i,r in stocks.iterrows():
-                sync_stock_intraday(r['代码'],date)
+                while worker_req.qsize() > os.cpu_count(): time.sleep(1)
+                worker_req.put(('sync_stock_intraday',r['代码'],date))
                 log.append(f'{int(i)+1}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
 
         while datetime.now() < h24:
@@ -400,7 +399,7 @@ if __name__ == '__main__':
     worker_res = shared.Queue()
     log = shared.list()
 
-    for i in range(min(4,os.cpu_count())):
+    for i in range(os.cpu_count()):
         process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req,worker_res],daemon=True)
         process.start()
  
@@ -425,7 +424,7 @@ if __name__ == '__main__':
         args = parser.parse_args(cmd)
         
         if args.mode == 'sync':
-            threading.Thread(target=data_syncing_of_stock_intraday,args=[log],name='股票数据同步',daemon=True).start()
+            threading.Thread(target=data_syncing_of_stock_intraday,args=[worker_req,log],name='股票数据同步',daemon=True).start()
         elif args.mode == 'up':
             codes = args.code.split(',')
             df = up(worker_req,worker_res,codes,args.date,args.days,eval(args.cap))
