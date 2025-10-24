@@ -236,7 +236,8 @@ def evaluate(code,date,info):
     
     pass
 
-def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
+def up(worker_req : mp.Queue,*args):
+    worker_res = shared.Queue()
     codes,date,days,cap = args
 
     stocks = pd.read_csv(os.path.join(db_dir,f'0-{date}-行情.csv'),dtype={'代码':str})
@@ -248,7 +249,7 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
     start = end - timedelta(days)
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')][1:]
 
-    stocks.apply(lambda r: worker_req.put(('feature',r['代码'],date,r)), axis=1)
+    stocks.apply(lambda r: worker_req.put((worker_res,'feature',r['代码'],date,r)), axis=1)
 
     dfs = dict()
     for _ in range(stocks.shape[0]):
@@ -299,14 +300,14 @@ def up(worker_req : mp.Queue,worker_res : mp.Queue,*args):
         # 超-下套反弹策略
     return df
     
-def play(worker_req : mp.Queue,worker_res : mp.Queue,codes,date,days):
+def play(worker_req : mp.Queue,codes,date,days):
     start = datetime.strptime(date,'%y%m%d')
     end = start - timedelta(days)
     if days < 0: start,end = end,start
     dates = [d.strftime('%Y%m%d') for d in pd.date_range(start,end,freq='1D')]
 
     for date in dates:
-        up(worker_req,worker_res,codes,date,-3,'')
+        up(worker_req,codes,date,-3,'')
 
 def get_stock_spot():
     h15 = datetime.now().replace(hour=15, minute=0, second=0)
@@ -353,12 +354,13 @@ def get_stock_intraday(code):
         else: i = 0
     return df
 
-def worker(id,req : mp.Queue,res : mp.Queue):
+def worker(id,req : mp.Queue):
     while True:
         args = req.get()
-        fun = args[0]
-        val = eval(f'{fun}(*args[1:])')
-        if val: res.put((*args,val))
+        res : mp.Queue = args[0]
+        fun = args[1]
+        val = eval(f'{fun}(*args[2:])')
+        if res: res.put((*args,val))
 
 def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
     while True:
@@ -382,11 +384,11 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
         df = ak.stock_zh_a_hist_min_em(symbol="000001", start_date=start, end_date=end, period="5", adjust="")
         log[:] = []
         if now.weekday() < 5 and not df.empty: 
-            stocks = stocks[(stocks['流通市值'] >= 80 * 1e8) & (stocks['流通市值'] <= 300 * 1e8)].reset_index(drop=True)
+            stocks = stocks[(stocks['流通市值'] >= 50 * 1e8) & (stocks['流通市值'] <= 150 * 1e8)].reset_index(drop=True)
 
             for i,r in stocks.iterrows():
                 while worker_req.qsize() > os.cpu_count(): time.sleep(1)
-                worker_req.put(('sync_stock_intraday',r['代码'],date))
+                worker_req.put((None,'sync_stock_intraday',r['代码'],date))
                 log.append(f'{int(i)+1}/{stocks.shape[0]} {r["代码"]}-{r["名称"]}')
 
         while datetime.now() < h24:
@@ -396,11 +398,10 @@ def data_syncing_of_stock_intraday(worker_req : mp.Queue,log : list):
 if __name__ == '__main__':
     shared = mp.Manager()
     worker_req = shared.Queue()
-    worker_res = shared.Queue()
     log = shared.list()
 
     for i in range(os.cpu_count()):
-        process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req,worker_res],daemon=True)
+        process = mp.Process(target=worker,name=f'牛马-{i}',args=[i,worker_req],daemon=True)
         process.start()
  
     while True:
@@ -419,7 +420,7 @@ if __name__ == '__main__':
         parser.add_argument('--code',type=str,default='[]')
         parser.add_argument('--date',type=str,default=datetime.now().strftime('%Y%m%d'))
         parser.add_argument('--days',type=int,default=1)
-        parser.add_argument('--cap',type=str,default='(80,300)')
+        parser.add_argument('--cap',type=str,default='(50,150)')
         
         args = parser.parse_args(cmd)
         
@@ -427,13 +428,13 @@ if __name__ == '__main__':
             threading.Thread(target=data_syncing_of_stock_intraday,args=[worker_req,log],name='股票数据同步',daemon=True).start()
         elif args.mode == 'up':
             codes = args.code.split(',')
-            df = up(worker_req,worker_res,codes,args.date,args.days,eval(args.cap))
+            df = up(worker_req,codes,args.date,args.days,eval(args.cap))
             df = df.sort_values(by='评分').reset_index(drop=True)
             print(df.to_string())
-            print(df[df['代码'].isin(codes)].to_string())
+            if codes: print(df[df['代码'].isin(codes)].to_string())
         elif args.mode == 'play':
             codes = args.code.split(',')
-            play(worker_req,worker_res,codes,args.date,args.days)
+            play(worker_req,codes,args.date,args.days)
         elif args.mode == 'measure':
             codes = args.code.split(',')
             for code in codes:
